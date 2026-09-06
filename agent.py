@@ -5,13 +5,20 @@ try:
     from .engine import forecast
     from .models import forecast_models
     from .storage import Store
-    from .full_srm import run_full_srm
 except ImportError:
     from data import fetch_yahoo_proxy, fetch_stooq_proxy, load_csv_panel
     from engine import forecast
     from models import forecast_models
     from storage import Store
-    from full_srm import run_full_srm
+
+try:
+    from .full_srm import run_full_srm
+except (ImportError, ModuleNotFoundError):
+    try:
+        from full_srm import run_full_srm
+    except (ImportError, ModuleNotFoundError) as exc:
+        run_full_srm = None
+        full_srm_import_error_message = str(exc)
 
 class SRMForecastingAgent:
     def __init__(self,output_dir="srm_agent_runs"):
@@ -41,6 +48,8 @@ class SRMForecastingAgent:
             if selected: panel=type(panel)(panel.rv[selected],panel.returns[selected],panel.source,panel.is_proxy)
         audit=self._audit(panel,task["horizon"],task["k"]); models,srm=forecast_models(panel.rv,list(panel.rv.columns),task["horizon"],task["k"],"cross_asset" if task["cross_asset"] else "same_asset")
         try:
+            if run_full_srm is None:
+                raise RuntimeError(f"Full SRM engine is unavailable: {full_srm_import_error_message}")
             full=run_full_srm(panel.rv,list(panel.rv.columns),task["horizon"],"cross_asset" if task["cross_asset"] else "same_asset")
             models["srm"]=full["predictions"]; srm.update(full); srm["neighbors"]=[]; srm["weights"]=[]; srm["candidate_count"]=sum(int(x.get("Candidate_Count",0)) for x in full.get("diagnostics",[]))
         except Exception as exc:
