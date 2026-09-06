@@ -1,9 +1,15 @@
 import json,re
 from pathlib import Path
-from .data import fetch_yahoo_proxy,load_csv_panel
-from .engine import forecast
-from .models import forecast_models
-from .storage import Store
+try:
+    from .data import fetch_yahoo_proxy, load_csv_panel
+    from .engine import forecast
+    from .models import forecast_models
+    from .storage import Store
+except ImportError:
+    from data import fetch_yahoo_proxy, load_csv_panel
+    from engine import forecast
+    from models import forecast_models
+    from storage import Store
 
 class SRMForecastingAgent:
     def __init__(self,output_dir="srm_agent_runs"):

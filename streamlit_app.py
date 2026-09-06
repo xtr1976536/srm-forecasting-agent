@@ -1,7 +1,10 @@
 from __future__ import annotations
 import json
 import streamlit as st
-from srm_agent.agent import SRMForecastingAgent
+try:
+    from srm_agent.agent import SRMForecastingAgent
+except ModuleNotFoundError:
+    from agent import SRMForecastingAgent
 
 st.set_page_config(page_title="SRM Volatility Agent", page_icon="~", layout="wide")
 agent = SRMForecastingAgent("srm_agent_runs")
