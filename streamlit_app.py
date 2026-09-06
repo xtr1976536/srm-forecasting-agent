@@ -1,7 +1,9 @@
 from __future__ import annotations
 import json
-import time
 import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+from streamlit_autorefresh import st_autorefresh
 try:
     from srm_agent.agent import SRMForecastingAgent
 except ModuleNotFoundError:
@@ -16,21 +18,22 @@ st.warning("Research and paper-trading purposes only. Not investment advice. Onl
 
 with st.sidebar:
     st.header("Live monitor")
-    auto_refresh = st.checkbox("Continuous refresh", value=False)
-    refresh_seconds = st.slider("Refresh interval (seconds)", 60, 900, 300, step=60)
+    auto_refresh = st.checkbox("Continuous refresh", value=True)
+    refresh_seconds = st.slider("Refresh interval (minutes)", 1, 15, 5)
     st.caption("Refresh reruns the forecast with the latest available market data.")
 if auto_refresh:
-    time.sleep(0.05)
-    st.rerun()
+    st_autorefresh(interval=refresh_seconds * 60 * 1000, key="market_refresh")
 
 if "paper" not in st.session_state:
     st.session_state.paper = {"cash": 100000.0, "initial_cash": 100000.0, "positions": {}, "orders": []}
 
-forecast_tab, paper_tab, audit_tab = st.tabs(["Forecast", "Paper Trading", "Audit"])
+forecast_tab, lab_tab, analog_tab, paper_tab, audit_tab = st.tabs(["Forecast Monitor", "Model Lab", "Analog Explorer", "Paper Trading", "Audit"])
 
 with forecast_tab:
     left, right = st.columns([1, 2])
     with left:
+        data_mode = st.selectbox("Data source", ["Yahoo daily RV proxy", "User RV dataset"])
+        uploaded = st.file_uploader("Upload RV CSV (optional)", type=["csv","zip"]) if data_mode == "User RV dataset" else None
         tickers = st.text_input("Tickers", "AAPL,MSFT,NVDA")
         horizon = st.selectbox("Forecast horizon", [1, 5, 21], index=1)
         neighbors = st.number_input("Neighbors K", min_value=5, max_value=100, value=20, step=5)
@@ -40,7 +43,11 @@ with forecast_tab:
         if run:
             symbols = [x.strip().upper() for x in tickers.split(",") if x.strip()]
             try:
-                result = agent.run(f"forecast {' '.join(symbols)} horizon={horizon} k={neighbors} {scope}")
+                csv_path = None
+                if uploaded is not None:
+                    suffix = ".zip" if uploaded.name.lower().endswith(".zip") else ".csv"
+                    tmp = Path("/tmp/srm_uploaded" + suffix); tmp.write_bytes(uploaded.getvalue()); csv_path = str(tmp)
+                result = agent.run(f"forecast {' '.join(symbols)} horizon={horizon} k={neighbors} {scope}", csv_path)
                 st.session_state.last_result = result
             except Exception as exc:
                 st.error(str(exc))
@@ -54,6 +61,16 @@ with forecast_tab:
             for model, values in result.get("model_predictions", {}).items():
                 for ticker, value in values.items(): rows.append({"Model":model,"Ticker":ticker,"Forecast RV":value})
             st.dataframe(rows, use_container_width=True, hide_index=True)
+            st.subheader("Forecast curve")
+            history = st.session_state.get("history", [])
+            history.append({"timestamp":result["forecast_date"], **result["predictions"]})
+            st.session_state.history = history[-60:]
+            curve_df = pd.DataFrame(st.session_state.history)
+            fig = go.Figure()
+            for ticker in result["predictions"]:
+                fig.add_trace(go.Scatter(x=curve_df["timestamp"], y=curve_df[ticker], mode="lines+markers", name=ticker))
+            fig.update_layout(height=340, margin=dict(l=10,r=10,t=20,b=10), xaxis_title="Forecast origin", yaxis_title="Predicted RV", hovermode="x unified")
+            st.plotly_chart(fig, use_container_width=True)
             st.subheader("Retrieved analog paths")
             if result.get("neighbors"):
                 st.dataframe(result["neighbors"][:10], use_container_width=True, hide_index=True)
@@ -61,6 +78,24 @@ with forecast_tab:
                 st.caption("Full five-channel SRM diagnostics for the latest test origin")
                 st.dataframe(result["diagnostics"][:20], use_container_width=True, hide_index=True)
             st.download_button("Download run JSON", json.dumps(result, indent=2), file_name=f"{result['run_id']}.json", mime="application/json")
+
+with lab_tab:
+    st.subheader("Model Lab")
+    st.info("Use Forecast Monitor to run the latest online forecast. Research-data rolling backtests remain available through the frozen experiment runner.")
+    result = st.session_state.get("last_result")
+    if result:
+        st.json({"run_id": result["run_id"], "horizon": result["horizon"], "data_audit": result["data_audit"], "models": list(result.get("model_predictions", {}))})
+    else: st.info("Run a forecast first.")
+
+with analog_tab:
+    st.subheader("Analog Explorer")
+    result = st.session_state.get("last_result")
+    if result and result.get("neighbors"):
+        st.dataframe(result["neighbors"], use_container_width=True, hide_index=True)
+        st.bar_chart(pd.DataFrame({"weight":result["weights"]}, index=[f"{n['ticker']}@{n['endpoint']}" for n in result["neighbors"]]))
+    elif result:
+        st.dataframe(result.get("diagnostics", []), use_container_width=True, hide_index=True)
+    else: st.info("Run a forecast first.")
 
 with paper_tab:
     st.subheader("Virtual account")
