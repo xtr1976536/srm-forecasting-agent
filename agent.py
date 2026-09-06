@@ -19,7 +19,7 @@ class SRMForecastingAgent:
         if task["tickers"]:
             selected=[t for t in task["tickers"] if t in panel.rv.columns]
             if selected: panel=type(panel)(panel.rv[selected],panel.returns[selected],panel.source,panel.is_proxy)
-        audit=self._audit(panel,task["horizon"],task["k"]); result=forecast(panel.rv,list(panel.rv.columns),task["horizon"],task["k"]); result.update({"task":task,"data_audit":audit,"model":"SRM-v1-curve-retrieval-demo"})
+        audit=self._audit(panel,task["horizon"],task["k"]); result=forecast(panel.rv,list(panel.rv.columns),task["horizon"],task["k"],"cross_asset" if task["cross_asset"] else "same_asset"); result.update({"task":task,"data_audit":audit,"model":"SRM-v1-curve-retrieval-demo"})
         out=self.output_dir/f"run_{result['forecast_date'].replace('-','')}_h{task['horizon']}"; out.mkdir(exist_ok=True); (out/"result.json").write_text(json.dumps(result,indent=2)); (out/"audit.json").write_text(json.dumps(audit,indent=2)); return result
     def explain(self,result,ticker):
         lines=[f"{ticker}: forecast={result['predictions'][ticker]:.8g}",f"origin={result['forecast_date']}, horizon={result['horizon']}, candidates={result['candidate_count']}","Top retrieved analogs:"]

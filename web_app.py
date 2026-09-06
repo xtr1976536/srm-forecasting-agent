@@ -33,5 +33,4 @@ def api_forecast(tickers: str = Query(...), h: int = Query(1, ge=1, le=21), k: i
         return {"detail": "Provide at least one ticker"}
     request = f"forecast {' '.join(symbols)} horizon={h} k={k} {scope}"
     result = agent.run(request)
-    result["retrieval_scope"] = scope
     return result
