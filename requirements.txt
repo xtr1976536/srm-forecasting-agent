@@ -3,5 +3,4 @@ pandas>=2.0
 yfinance>=0.2.40
 streamlit>=1.37
 plotly>=5.20
-streamlit-autorefresh>=1.0.1
 torch>=2.2

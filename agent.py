@@ -40,7 +40,7 @@ class SRMForecastingAgent:
         try:
             if run_full_srm is None:
                 raise RuntimeError(f"Full SRM engine is unavailable: {full_srm_import_error_message}")
-            full=run_full_srm(panel.rv,list(panel.rv.columns),task["horizon"],"cross_asset" if task["cross_asset"] else "same_asset")
+            full=run_full_srm(panel.rv,list(panel.rv.columns),task["horizon"],"cross_asset" if task["cross_asset"] else "same_asset",neighbors=task["k"])
             models["srm"]=full["predictions"]; srm.update(full); srm["neighbors"]=[]; srm["weights"]=[]; srm["candidate_count"]=sum(int(x.get("Candidate_Count",0)) for x in full.get("diagnostics",[]))
         except Exception as exc:
             srm["full_engine_warning"]=str(exc)

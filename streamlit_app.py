@@ -4,23 +4,34 @@ from pathlib import Path
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from streamlit_autorefresh import st_autorefresh
 from agent import SRMForecastingAgent
 
 st.set_page_config(page_title="SRM Volatility Agent", page_icon="~", layout="wide")
 agent = SRMForecastingAgent("srm_agent_runs")
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_online_forecast(request_text):
+    return agent.run(request_text)
+
 st.title("SRM Volatility Forecasting Agent")
-st.caption("Geometric path retrieval, model comparison and paper-trading research")
-st.warning("Research and paper-trading purposes only. Not investment advice. Online Yahoo data is a daily-data RV proxy, not high-frequency realized volatility.")
+st.caption("Daily volatility forecasts from geometrically similar market histories")
+st.warning("Research and paper-trading only. Not investment advice. Public market data produce a daily RV proxy, not high-frequency realized volatility.")
+
+with st.expander("How to use / 使用说明", expanded=True):
+    st.markdown("""
+    **1. Choose data and assets.** Use Yahoo for a quick public-data demonstration, or upload your own realized-volatility CSV/ZIP. Enter several tickers for cross-asset retrieval.
+
+    **2. Choose a horizon.** `1`, `5`, and `21` mean the next trading day or the average volatility over the next 5 or 21 trading days. `K` is the number of similar historical paths used by SRM.
+
+    **3. Run and interpret.** Lower predicted RV means a calmer expected volatility state; higher predicted RV means greater expected risk. Compare models, then inspect the historical analogs and audit record. The forecast updates meaningfully only after a new daily observation becomes available.
+
+    **中文：** 先选择数据和股票，再选择预测期限与近邻数，最后点击 **Run daily forecast**。预测值表示未来期限内的平均波动率，而不是价格涨跌方向。
+    """)
 
 with st.sidebar:
-    st.header("Live monitor")
-    auto_refresh = st.checkbox("Continuous refresh", value=True)
-    refresh_seconds = st.slider("Refresh interval (minutes)", 1, 15, 5)
-    st.caption("Refresh reruns the forecast with the latest available market data.")
-if auto_refresh:
-    st_autorefresh(interval=refresh_seconds * 60 * 1000, key="market_refresh")
+    st.header("Daily forecast cycle")
+    st.info("SRM is a daily model. Re-run after the market data source publishes a new daily close.")
+    st.caption("No intraday auto-refresh: repeating the model before a new daily observation would not add information.")
 
 if "paper" not in st.session_state:
     st.session_state.paper = {"cash": 100000.0, "initial_cash": 100000.0, "positions": {}, "orders": []}
@@ -37,26 +48,35 @@ with forecast_tab:
         neighbors = st.number_input("Neighbors K", min_value=5, max_value=100, value=20, step=5)
         scope = st.selectbox("Retrieval scope", ["cross_asset", "same_asset"])
         selected_models = st.multiselect("Models", ["srm", "historical_mean", "har", "har_iv", "gharm", "gharm_iv"], default=["srm", "historical_mean", "har"])
-        run = st.button("Run forecast", type="primary", use_container_width=True)
+        st.caption("Cross-asset retrieval searches analog paths across all entered tickers. Same-asset retrieval searches only each target's own history.")
+        run = st.button("Run daily forecast", type="primary", use_container_width=True)
     with right:
-        if run or (auto_refresh and st.session_state.get("last_request")):
+        if run:
             symbols = [x.strip().upper() for x in tickers.split(",") if x.strip()]
             try:
+                if len(symbols) > 5:
+                    raise ValueError("The free full-SRM service supports at most 5 tickers per run. Use an uploaded research job for larger universes.")
                 csv_path = None
                 if uploaded is not None:
                     suffix = ".zip" if uploaded.name.lower().endswith(".zip") else ".csv"
                     tmp = Path("/tmp/srm_uploaded" + suffix); tmp.write_bytes(uploaded.getvalue()); csv_path = str(tmp)
                 request_text = f"forecast {' '.join(symbols)} horizon={horizon} k={neighbors} {scope}"
                 st.session_state.last_request = request_text
-                result = agent.run(request_text, csv_path)
+                with st.spinner("Building geometric memory, fitting channel weights, and retrieving analog paths..."):
+                    result = agent.run(request_text, csv_path) if csv_path else cached_online_forecast(request_text)
                 st.session_state.last_result = result
             except Exception as exc:
                 st.error(str(exc))
         result = st.session_state.get("last_result")
         if result:
-            st.success(f"Origin: {result['forecast_date']} | {result['horizon']}-day horizon | Run: {result['run_id']}")
-            st.subheader("SRM forecasts")
-            st.dataframe([{ "Ticker": k, "SRM": v } for k, v in result["predictions"].items()], use_container_width=True, hide_index=True)
+            source=result.get("data_audit",{}).get("source","Unknown")
+            st.success(f"Data through {result['forecast_date']} | {result['horizon']}-day average forecast | {source}")
+            st.subheader("Forecast summary")
+            cols=st.columns(min(4,len(result["predictions"])))
+            for idx,(ticker,value) in enumerate(result["predictions"].items()):
+                cols[idx%len(cols)].metric(ticker, f"{value:.6f}")
+            if result.get("warnings"):
+                for warning in result["warnings"]: st.warning(warning)
             st.subheader("Model comparison")
             rows=[]
             for model, values in result.get("model_predictions", {}).items():
@@ -66,7 +86,7 @@ with forecast_tab:
                 else:
                     for ticker, value in values.items(): rows.append({"Model":model,"Ticker":ticker,"Forecast RV":value})
             st.dataframe(rows, use_container_width=True, hide_index=True)
-            st.subheader("Forecast curve")
+            st.subheader("Historical volatility path and horizon-average forecast")
             fig = go.Figure()
             for ticker in result["predictions"]:
                 hist = result.get("recent_rv", {}).get(ticker, [])
@@ -74,9 +94,10 @@ with forecast_tab:
                     fig.add_trace(go.Scatter(x=[x["date"] for x in hist], y=[x["value"] for x in hist], mode="lines", name=f"{ticker} realized/proxy"))
                 future = result.get("forecast_curve", {}).get(ticker, [])
                 if future:
-                    fig.add_trace(go.Scatter(x=[f"t+{x['step']}" for x in future], y=[x["value"] for x in future], mode="lines+markers", name=f"{ticker} SRM forecast", line=dict(dash="dash")))
-            fig.update_layout(height=340, margin=dict(l=10,r=10,t=20,b=10), xaxis_title="Forecast origin", yaxis_title="Predicted RV", hovermode="x unified")
+                    fig.add_trace(go.Scatter(x=[f"Forecast h={result['horizon']}"] , y=[future[0]["value"]], mode="markers", marker=dict(size=12), name=f"{ticker} forecast average"))
+            fig.update_layout(height=380, margin=dict(l=10,r=10,t=20,b=10), xaxis_title="Date / forecast horizon", yaxis_title="RV or daily-data RV proxy", hovermode="x unified")
             st.plotly_chart(fig, use_container_width=True)
+            st.caption("The point labelled Forecast is the predicted average RV over the selected horizon. SRM does not claim to predict a separate daily path inside that horizon.")
             st.subheader("Retrieved analog paths")
             if result.get("neighbors"):
                 st.dataframe(result["neighbors"][:10], use_container_width=True, hide_index=True)
