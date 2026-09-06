@@ -1,4 +1,5 @@
 import json,re
+from datetime import datetime, timezone
 from pathlib import Path
 from data import fetch_yahoo_proxy, fetch_stooq_proxy, load_csv_panel
 from engine import forecast
@@ -9,6 +10,10 @@ try:
 except (ImportError, ModuleNotFoundError) as exc:
     run_full_srm = None
     full_srm_import_error_message = str(exc)
+try:
+    from .full_baselines import run_full_baselines
+except ImportError:
+    from full_baselines import run_full_baselines
 
 class SRMForecastingAgent:
     def __init__(self,output_dir="srm_agent_runs"):
@@ -35,8 +40,16 @@ class SRMForecastingAgent:
                 warnings.append("Using Stooq public daily fallback; volatility is a daily-data RV proxy.")
         if task["tickers"]:
             selected=[t for t in task["tickers"] if t in panel.rv.columns]
-            if selected: panel=type(panel)(panel.rv[selected],panel.returns[selected],panel.source,panel.is_proxy)
+            if selected: panel=type(panel)(panel.rv[selected],panel.returns[selected],panel.source,panel.is_proxy,panel.iv[selected] if panel.iv is not None else None)
         audit=self._audit(panel,task["horizon"],task["k"]); models,srm=forecast_models(panel.rv,list(panel.rv.columns),task["horizon"],task["k"],"cross_asset" if task["cross_asset"] else "same_asset")
+        try:
+            baseline=run_full_baselines(panel.rv,panel.iv,panel.returns,list(panel.rv.columns),task["horizon"],criterion="mse")
+            models.update(baseline["predictions"])
+            audit["baseline_window"]=baseline["window"]; audit["graph_audit"]=baseline["graph_audit"]
+        except Exception as exc:
+            result_warning=f"Benchmark adapters unavailable: {exc}"
+        else:
+            result_warning=None
         try:
             if run_full_srm is None:
                 raise RuntimeError(f"Full SRM engine is unavailable: {full_srm_import_error_message}")
@@ -44,7 +57,8 @@ class SRMForecastingAgent:
             models["srm"]=full["predictions"]; srm.update(full); srm["neighbors"]=[]; srm["weights"]=[]; srm["candidate_count"]=sum(int(x.get("Candidate_Count",0)) for x in full.get("diagnostics",[]))
         except Exception as exc:
             srm["full_engine_warning"]=str(exc)
-        result=srm; result.update({"predictions":models["srm"],"model_predictions":models,"task":task,"task_models":task.get("models"),"data_audit":audit,"model":"SRM-v1-full-five-channel","warnings":warnings})
+        if result_warning: warnings.append(result_warning)
+        result=srm; result.update({"predictions":models["srm"],"model_predictions":models,"task":task,"task_models":task.get("models"),"data_audit":audit,"data_timestamp":datetime.now(timezone.utc).isoformat(),"model":"SRM-v1-full-five-channel","warnings":warnings})
         result["recent_rv"] = {t: [{"date": str(d.date()), "value": float(v)} for d,v in panel.rv[t].tail(60).items()] for t in panel.rv.columns}
         result["forecast_curve"] = {t: [{"step": i+1, "value": float(v)} for i in range(task["horizon"])] for t,v in result["predictions"].items()}
         result["run_id"]=self.store.save_run(result)

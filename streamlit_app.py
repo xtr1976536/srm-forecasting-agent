@@ -16,6 +16,7 @@ def cached_online_forecast(request_text):
 st.title("SRM Volatility Forecasting Agent")
 st.caption("Daily volatility forecasts from geometrically similar market histories")
 st.warning("Research and paper-trading only. Not investment advice. Public market data produce a daily RV proxy, not high-frequency realized volatility.")
+st.info("SRM forecasts volatility magnitude, not price direction. Use the output for risk sizing and simulation; a separate return model would be required for a bullish/bearish price forecast.")
 
 with st.expander("How to use / 使用说明", expanded=True):
     st.markdown("""
@@ -71,6 +72,7 @@ with forecast_tab:
         if result:
             source=result.get("data_audit",{}).get("source","Unknown")
             st.success(f"Data through {result['forecast_date']} | {result['horizon']}-day average forecast | {source}")
+            st.caption(f"Last successful update: {result.get('data_timestamp','not recorded')} | Run ID: {result.get('run_id','')}")
             st.subheader("Forecast summary")
             cols=st.columns(min(4,len(result["predictions"])))
             for idx,(ticker,value) in enumerate(result["predictions"].items()):
@@ -125,13 +127,24 @@ with analog_tab:
     else: st.info("Run a forecast first.")
 
 with paper_tab:
-    st.subheader("Virtual account")
+    st.subheader("Volatility-aware paper portfolio")
+    st.caption("Volatility does not predict direction. This workspace uses forecasts to scale risk and records only simulated orders.")
     cash = st.number_input("Reset cash", min_value=1000.0, value=float(st.session_state.paper["initial_cash"]), step=1000.0)
     if st.button("Reset account"):
         st.session_state.paper={"cash":cash,"initial_cash":cash,"positions":{},"orders":[]}
         st.rerun()
     p=st.session_state.paper
     st.metric("Cash", f"${p['cash']:,.2f}")
+    result=st.session_state.get("last_result")
+    if result:
+        st.subheader("Risk budget calculator")
+        risk_ticker=st.selectbox("Forecast asset",list(result["predictions"]),key="risk_ticker")
+        target_risk=st.slider("Target volatility budget",0.05,0.30,0.12,0.01)
+        predicted=max(float(result["predictions"][risk_ticker]),1e-8)
+        scale=min(target_risk/predicted,1.0)
+        suggested=p["cash"]*scale
+        c1,c2,c3=st.columns(3); c1.metric("Predicted RV",f"{predicted:.4f}"); c2.metric("Risk scale",f"{scale:.1%}"); c3.metric("Max simulated allocation",f"${suggested:,.0f}")
+        st.caption("This is a volatility-targeting illustration, not a buy/sell recommendation. Directional exposure must be chosen separately.")
     oticker=st.text_input("Order ticker", "AAPL")
     side=st.selectbox("Side", ["buy","sell"]); qty=st.number_input("Quantity", min_value=0.0001, value=1.0); price=st.number_input("Execution price", min_value=0.0001, value=100.0); fee=st.number_input("Transaction cost", min_value=0.0, max_value=0.1, value=0.0005, format="%.4f")
     if st.button("Place simulated order"):

@@ -13,6 +13,7 @@ class MarketPanel:
     returns: pd.DataFrame
     source: str
     is_proxy: bool
+    iv: pd.DataFrame | None = None
 
 def load_csv_panel(path):
     root=Path(path); rv_file=root/"merged_rv_data_filled.csv" if root.is_dir() else root
@@ -21,18 +22,30 @@ def load_csv_panel(path):
             names=z.namelist()
             rv_name=next((n for n in names if n.endswith("merged_rv_data_filled.csv")),None)
             ret_name=next((n for n in names if n.endswith("daily_returns.csv")),None)
+            iv_name=next((n for n in names if n.endswith("merged_iv_data_filled.csv")),None)
             if not rv_name: raise FileNotFoundError("ZIP is missing merged_rv_data_filled.csv")
             rv=pd.read_csv(io.BytesIO(z.read(rv_name)),parse_dates=["Date"]).set_index("Date").sort_index()
             returns=pd.read_csv(io.BytesIO(z.read(ret_name)),parse_dates=["Date"]).set_index("Date").sort_index() if ret_name else rv.pct_change()
+            iv=pd.read_csv(io.BytesIO(z.read(iv_name)),parse_dates=["Date"]).set_index("Date").sort_index() if iv_name else None
     else:
         rv=pd.read_csv(rv_file,parse_dates=["Date"]).set_index("Date").sort_index()
         ret_file=root/"daily_returns.csv" if root.is_dir() else root.with_name("daily_returns.csv")
         returns=pd.read_csv(ret_file,parse_dates=["Date"]).set_index("Date").sort_index() if ret_file.exists() else rv.pct_change()
+        iv_file=root/"merged_iv_data_filled.csv" if root.is_dir() else root.with_name("merged_iv_data_filled.csv")
+        iv=pd.read_csv(iv_file,parse_dates=["Date"]).set_index("Date").sort_index() if iv_file.exists() else None
+    returns=returns.replace([np.inf,-np.inf],np.nan).fillna(0.0)
     common=rv.index.intersection(returns.index).drop_duplicates().sort_values(); cols=sorted(set(rv.columns)&set(returns.columns))
     rv,returns=rv.loc[common,cols].astype(float),returns.loc[common,cols].astype(float)
     valid=np.isfinite(rv).all(axis=0)&(rv>0).all(axis=0)&np.isfinite(returns).all(axis=0); cols=[c for c,k in zip(cols,valid) if k]
     if not cols: raise ValueError("no complete positive RV series")
-    return MarketPanel(rv[cols],returns[cols],str(root),False)
+    if iv is not None:
+        common=common.intersection(iv.index); cols=[c for c in cols if c in iv.columns]
+        rv,returns,iv=rv.loc[common,cols],returns.loc[common,cols],iv.loc[common,cols].astype(float)
+        iv_values=iv.to_numpy(float)
+        valid_iv=np.isfinite(iv_values).all(axis=0)&(iv_values>0).all(axis=0)
+        cols=[c for c,k in zip(cols,valid_iv) if k]
+        rv,returns,iv=rv[cols],returns[cols],iv[cols]
+    return MarketPanel(rv[cols],returns[cols],str(root),False,iv)
 
 def fetch_yahoo_proxy(tickers,lookback_days=3000):
     import yfinance as yf
