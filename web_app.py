@@ -55,10 +55,11 @@ def agent_task(request: dict):
 
 @app.post("/api/backtest")
 def backtest(request: dict):
-    # The first public release keeps the endpoint explicit and auditable. Full
-    # rolling evaluation uses the frozen research runner, not live proxy data.
     if not request.get("tickers"): raise HTTPException(status_code=400, detail="tickers are required")
-    return {"status":"accepted","message":"Run backtests from the research-data adapter; live Yahoo mode is a proxy and is not used for paper-grade evaluation.","request":request}
+    tickers=" ".join(str(x).upper() for x in request["tickers"])
+    prompt=f"forecast {tickers} horizon={request.get('horizon',1)} k={request.get('neighbors',20)} {request.get('retrieval_scope','cross_asset')} criterion={request.get('criterion','qlike')}"
+    try: return agent.backtest(prompt,request.get("csv_path"),request.get("model","srm"),min(int(request.get("origins",3)),5))
+    except Exception as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 @app.get("/api/run/{run_id}")
 def get_run(run_id: str):

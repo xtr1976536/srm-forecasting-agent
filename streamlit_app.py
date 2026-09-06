@@ -81,6 +81,7 @@ with forecast_tab:
                 if uploaded is not None:
                     suffix = ".zip" if uploaded.name.lower().endswith(".zip") else ".csv"
                     tmp = Path("/tmp/srm_uploaded" + suffix); tmp.write_bytes(uploaded.getvalue()); csv_path = str(tmp)
+                    st.session_state.research_data_path=csv_path
                 request_text = f"forecast {' '.join(symbols)} horizon={horizon} k={neighbors} {scope} criterion={criterion.lower()}"
                 st.session_state.last_request = request_text
                 with st.spinner("Building geometric memory, fitting channel weights, and retrieving analog paths..."):
@@ -152,11 +153,30 @@ with intraday_tab:
 
 with lab_tab:
     st.subheader("Model Lab")
-    st.info("Use Forecast Monitor to run the latest online forecast. Research-data rolling backtests remain available through the frozen experiment runner.")
-    result = st.session_state.get("last_result")
-    if result:
-        st.json({"run_id": result["run_id"], "horizon": result["horizon"], "data_audit": result["data_audit"], "models": list(result.get("model_predictions", {}))})
-    else: st.info("Run a forecast first.")
+    st.caption("Leakage-controlled rolling diagnostics. Full SRM is compute-intensive, so the free service evaluates at most five recent origins per run.")
+    b1,b2=st.columns([1,2])
+    with b1:
+        bt_tickers=st.text_input("Backtest tickers","AAPL,MSFT",key="bt_tickers")
+        bt_model=st.selectbox("Backtest model",["srm","har","gharm","har_iv","gharm_iv"])
+        bt_h=st.selectbox("Backtest horizon",[1,5,21],index=1,key="bt_h")
+        bt_k=st.number_input("Backtest K",5,100,20,5)
+        bt_scope=st.selectbox("Backtest retrieval scope",["cross_asset","same_asset"])
+        bt_criterion=st.selectbox("Backtest criterion",["qlike","mse"])
+        bt_origins=st.slider("Recent forecast origins",1,5,3)
+        bt_run=st.button("Run backtest",type="primary")
+    with b2:
+        if bt_run:
+            request=f"forecast {' '.join(x.strip().upper() for x in bt_tickers.split(',') if x.strip())} horizon={bt_h} k={bt_k} {bt_scope} criterion={bt_criterion}"
+            try:
+                with st.spinner("Running leakage-controlled rolling evaluation..."):
+                    bt=agent.backtest(request,st.session_state.get("research_data_path"),bt_model,bt_origins)
+                st.session_state.backtest_result=bt
+            except Exception as exc: st.error(str(exc))
+        bt=st.session_state.get("backtest_result")
+        if bt:
+            m1,m2,m3=st.columns(3); m1.metric("MSE",f"{bt['summary']['mse']:.6g}"); m2.metric("QLIKE",f"{bt['summary']['qlike']:.6g}"); m3.metric("MAE",f"{bt['summary']['mae']:.6g}")
+            btdf=pd.DataFrame(bt["predictions"]); fig=go.Figure(); fig.add_trace(go.Scatter(x=btdf["Date"],y=btdf["Target"],name="Realized")); fig.add_trace(go.Scatter(x=btdf["Date"],y=btdf["Prediction"],name="Forecast")); fig.update_layout(height=420,hovermode="x unified",margin=dict(l=10,r=10,t=20,b=10)); st.plotly_chart(fig,use_container_width=True)
+            st.dataframe(btdf,use_container_width=True,hide_index=True); st.download_button("Download backtest CSV",btdf.to_csv(index=False),"backtest.csv","text/csv")
 
 with analog_tab:
     st.subheader("Analog Explorer")

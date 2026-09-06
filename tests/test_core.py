@@ -6,6 +6,8 @@ from intraday import _risk_curve
 from storage import Store
 from agent import SRMForecastingAgent
 from full_baselines import run_full_baselines
+from backtest import run_backtest
+from data import MarketPanel
 
 
 def panel(n=80):
@@ -51,3 +53,11 @@ def test_iv_baselines_use_iv_features():
     returns=pd.DataFrame(rng.normal(0,.02,(n,3)),index=index,columns=columns)
     result=run_full_baselines(rv,iv,returns,columns,1,"mse")["predictions"]
     assert any(not np.isclose(result["har"][ticker],result["har_iv"][ticker]) for ticker in columns)
+
+def test_backtest_uses_completed_future_only():
+    rng=np.random.default_rng(10); n=850; columns=["AAA","BBB"]; index=pd.date_range("2020-01-01",periods=n)
+    rv=pd.DataFrame(np.exp(rng.normal(-4,.2,(n,2))),index=index,columns=columns)
+    returns=pd.DataFrame(rng.normal(0,.02,(n,2)),index=index,columns=columns)
+    result=run_backtest(MarketPanel(rv,returns,"test",True),columns,1,"har",origins=2)
+    assert result["audit"]["future_data_used_for_fit"] is False
+    assert len(result["predictions"])==4

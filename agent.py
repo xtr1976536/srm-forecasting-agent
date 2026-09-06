@@ -5,6 +5,7 @@ from data import fetch_yahoo_proxy, fetch_stooq_proxy, load_csv_panel
 from engine import forecast
 from models import forecast_models
 from storage import Store
+from backtest import run_backtest
 try:
     from full_srm import run_full_srm
 except (ImportError, ModuleNotFoundError) as exc:
@@ -64,6 +65,16 @@ class SRMForecastingAgent:
         result["forecast_curve"] = {t: [{"step": i+1, "value": float(v)} for i in range(task["horizon"])] for t,v in result["predictions"].items()}
         result["run_id"]=self.store.save_run(result)
         out=self.output_dir/f"run_{result['forecast_date'].replace('-','')}_h{task['horizon']}"; out.mkdir(exist_ok=True); (out/"result.json").write_text(json.dumps(result,indent=2)); (out/"audit.json").write_text(json.dumps(audit,indent=2)); return result
+    def backtest(self,request,csv_path=None,model="srm",origins=3):
+        task=self.parse_task(request)
+        if csv_path: panel=load_csv_panel(csv_path)
+        else:
+            try: panel=fetch_yahoo_proxy(task["tickers"])
+            except Exception: panel=fetch_stooq_proxy(task["tickers"])
+        tickers=[t for t in task["tickers"] if t in panel.rv.columns]
+        if not tickers: raise ValueError("no requested tickers are available")
+        result=run_backtest(panel,tickers,task["horizon"],model,"cross_asset" if task["cross_asset"] else "same_asset",task["k"],task["criterion"],origins)
+        serial={**result,"predictions":result["predictions"].to_dict(orient="records")}; serial["run_id"]=self.store.save_run(serial); return serial
     def explain(self,result,ticker):
         lines=[f"{ticker}: forecast={result['predictions'][ticker]:.8g}",f"origin={result['forecast_date']}, horizon={result['horizon']}, candidates={result['candidate_count']}","Top retrieved analogs:"]
         lines += [f"  {n['ticker']} @ endpoint {n['endpoint']}: distance={n['distance']:.6g}, weight={w:.4f}, relative_change={n['relative_change']:.6g}" for n,w in zip(result['neighbors'][:5],result['weights'][:5])]
