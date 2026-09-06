@@ -5,11 +5,13 @@ try:
     from .engine import forecast
     from .models import forecast_models
     from .storage import Store
+    from .full_srm import run_full_srm
 except ImportError:
     from data import fetch_yahoo_proxy, load_csv_panel
     from engine import forecast
     from models import forecast_models
     from storage import Store
+    from full_srm import run_full_srm
 
 class SRMForecastingAgent:
     def __init__(self,output_dir="srm_agent_runs"):
@@ -28,7 +30,13 @@ class SRMForecastingAgent:
         if task["tickers"]:
             selected=[t for t in task["tickers"] if t in panel.rv.columns]
             if selected: panel=type(panel)(panel.rv[selected],panel.returns[selected],panel.source,panel.is_proxy)
-        audit=self._audit(panel,task["horizon"],task["k"]); models,srm=forecast_models(panel.rv,list(panel.rv.columns),task["horizon"],task["k"],"cross_asset" if task["cross_asset"] else "same_asset"); result=srm; result.update({"predictions":srm["predictions"],"model_predictions":models,"task":task,"data_audit":audit,"model":"SRM-v1-curve-retrieval-demo"})
+        audit=self._audit(panel,task["horizon"],task["k"]); models,srm=forecast_models(panel.rv,list(panel.rv.columns),task["horizon"],task["k"],"cross_asset" if task["cross_asset"] else "same_asset")
+        try:
+            full=run_full_srm(panel.rv,list(panel.rv.columns),task["horizon"],"cross_asset" if task["cross_asset"] else "same_asset")
+            models["srm"]=full["predictions"]; srm.update(full); srm["neighbors"]=[]; srm["weights"]=[]; srm["candidate_count"]=sum(int(x.get("Candidate_Count",0)) for x in full.get("diagnostics",[]))
+        except Exception as exc:
+            srm["full_engine_warning"]=str(exc)
+        result=srm; result.update({"predictions":models["srm"],"model_predictions":models,"task":task,"data_audit":audit,"model":"SRM-v1-full-five-channel"})
         result["run_id"]=self.store.save_run(result)
         out=self.output_dir/f"run_{result['forecast_date'].replace('-','')}_h{task['horizon']}"; out.mkdir(exist_ok=True); (out/"result.json").write_text(json.dumps(result,indent=2)); (out/"audit.json").write_text(json.dumps(audit,indent=2)); return result
     def explain(self,result,ticker):

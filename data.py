@@ -22,7 +22,7 @@ def load_csv_panel(path):
     if not cols: raise ValueError("no complete positive RV series")
     return MarketPanel(rv[cols],returns[cols],str(root),False)
 
-def fetch_yahoo_proxy(tickers,lookback_days=900):
+def fetch_yahoo_proxy(tickers,lookback_days=1800):
     import yfinance as yf
     end=datetime.utcnow(); start=end-timedelta(days=lookback_days)
     raw=yf.download(tickers,start=start.date(),end=end.date(),auto_adjust=True,progress=False,threads=True)

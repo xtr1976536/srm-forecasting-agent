@@ -9,6 +9,8 @@ python -m srm_agent.cli "forecast AAPL MSFT NVDA horizon=5 k=20 cross asset"
 
 The Yahoo adapter uses daily closing prices and labels its rolling squared-return measure as an RV proxy. For publication-grade realized volatility, pass a directory containing `merged_rv_data_filled.csv` and optionally `daily_returns.csv` with `--csv`.
 
+The deployed Streamlit entrypoint now uses the full audited SRM geometry engine (`research_engine/`): five channels (curve, velocity, acceleration, curvature, global geometry), Transformer channel weights, candidate-boundary checks, and target-specific same/cross-asset retrieval. The web layer caches run metadata and presents diagnostics without changing the paper formula.
+
 ## Web dashboard
 
 Install `web_requirements.txt`, then run:

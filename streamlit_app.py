@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import time
 import streamlit as st
 try:
     from srm_agent.agent import SRMForecastingAgent
@@ -12,6 +13,15 @@ agent = SRMForecastingAgent("srm_agent_runs")
 st.title("SRM Volatility Forecasting Agent")
 st.caption("Geometric path retrieval, model comparison and paper-trading research")
 st.warning("Research and paper-trading purposes only. Not investment advice. Online Yahoo data is a daily-data RV proxy, not high-frequency realized volatility.")
+
+with st.sidebar:
+    st.header("Live monitor")
+    auto_refresh = st.checkbox("Continuous refresh", value=False)
+    refresh_seconds = st.slider("Refresh interval (seconds)", 60, 900, 300, step=60)
+    st.caption("Refresh reruns the forecast with the latest available market data.")
+if auto_refresh:
+    time.sleep(0.05)
+    st.rerun()
 
 if "paper" not in st.session_state:
     st.session_state.paper = {"cash": 100000.0, "initial_cash": 100000.0, "positions": {}, "orders": []}
@@ -45,7 +55,11 @@ with forecast_tab:
                 for ticker, value in values.items(): rows.append({"Model":model,"Ticker":ticker,"Forecast RV":value})
             st.dataframe(rows, use_container_width=True, hide_index=True)
             st.subheader("Retrieved analog paths")
-            st.dataframe(result["neighbors"][:10], use_container_width=True, hide_index=True)
+            if result.get("neighbors"):
+                st.dataframe(result["neighbors"][:10], use_container_width=True, hide_index=True)
+            elif result.get("diagnostics"):
+                st.caption("Full five-channel SRM diagnostics for the latest test origin")
+                st.dataframe(result["diagnostics"][:20], use_container_width=True, hide_index=True)
             st.download_button("Download run JSON", json.dumps(result, indent=2), file_name=f"{result['run_id']}.json", mime="application/json")
 
 with paper_tab:

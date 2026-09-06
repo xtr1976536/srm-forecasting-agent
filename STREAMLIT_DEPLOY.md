@@ -7,3 +7,5 @@
 5. Deploy. Streamlit will provide a public `*.streamlit.app` URL.
 
 The free service may sleep after inactivity. Session-level paper-account state is intentionally non-persistent; no real orders or broker keys are used.
+
+After each GitHub push, Streamlit Community Cloud automatically rebuilds the app. Use the sidebar's Continuous refresh switch for periodic polling; the minimum interval is deliberately conservative to avoid excessive Yahoo Finance requests.
