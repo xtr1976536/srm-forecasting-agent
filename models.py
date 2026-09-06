@@ -1,6 +1,9 @@
 from __future__ import annotations
 import numpy as np
-from .engine import forecast
+try:
+    from .engine import forecast
+except ImportError:
+    from engine import forecast
 
 def _target_series(rv,h):
     return {t:float(rv[t].iloc[-min(h,len(rv)):].mean()) for t in rv.columns}
