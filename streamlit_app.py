@@ -54,7 +54,7 @@ with st.sidebar:
     if intraday_refresh: st_autorefresh(interval=intraday_minutes*60*1000,key="intraday_refresh")
 
 if "paper" not in st.session_state:
-    st.session_state.paper = {"cash": 100000.0, "initial_cash": 100000.0, "positions": {}, "orders": []}
+    st.session_state.paper = {"cash": 100000.0, "initial_cash": 100000.0, "positions": {}, "orders": [], "marks": {}, "equity_curve": []}
 
 forecast_tab, intraday_tab, lab_tab, analog_tab, agent_tab, paper_tab, audit_tab = st.tabs(["Forecast Monitor", "Intraday Risk", "Model Lab", "Analog Explorer", "Agent", "Paper Trading", "Audit"])
 
@@ -209,7 +209,7 @@ with paper_tab:
     st.caption("Volatility does not predict direction. This workspace uses forecasts to scale risk and records only simulated orders.")
     cash = st.number_input("Reset cash", min_value=1000.0, value=float(st.session_state.paper["initial_cash"]), step=1000.0)
     if st.button("Reset account"):
-        st.session_state.paper={"cash":cash,"initial_cash":cash,"positions":{},"orders":[]}
+        st.session_state.paper={"cash":cash,"initial_cash":cash,"positions":{},"orders":[],"marks":{},"equity_curve":[]}
         st.rerun()
     p=st.session_state.paper
     st.metric("Cash", f"${p['cash']:,.2f}")
@@ -223,6 +223,14 @@ with paper_tab:
         suggested=p["cash"]*scale
         c1,c2,c3=st.columns(3); c1.metric("Predicted RV",f"{predicted:.4f}"); c2.metric("Risk scale",f"{scale:.1%}"); c3.metric("Max simulated allocation",f"${suggested:,.0f}")
         st.caption("This is a volatility-targeting illustration, not a buy/sell recommendation. Directional exposure must be chosen separately.")
+        if st.button("Apply target allocation (simulated)"):
+            mark=float(st.session_state.get("last_prices",{}).get(risk_ticker,0))
+            if mark<=0: st.warning("Enter an execution price below before applying the allocation.")
+            else:
+                target_value=suggested; current_value=p["positions"].get(risk_ticker,0)*mark; delta=max(target_value-current_value,0); shares=delta/mark
+                if shares>0 and delta*(1+0.0005)<=p["cash"]:
+                    fee_cost=delta*0.0005; p["cash"]-=delta+fee_cost; p["positions"][risk_ticker]=p["positions"].get(risk_ticker,0)+shares; p["marks"][risk_ticker]=mark; p["orders"].append({"ticker":risk_ticker,"side":"buy","quantity":shares,"price":mark,"fee":fee_cost,"reason":"volatility_target"}); st.success(f"Added {shares:.4f} shares in simulation")
+                else: st.warning("No allocation added: target is already met or cash is insufficient.")
     oticker=st.text_input("Order ticker", "AAPL")
     side=st.selectbox("Side", ["buy","sell"]); qty=st.number_input("Quantity", min_value=0.0001, value=1.0); price=st.number_input("Execution price", min_value=0.0001, value=100.0); fee=st.number_input("Transaction cost", min_value=0.0, max_value=0.1, value=0.0005, format="%.4f")
     if st.button("Place simulated order"):
@@ -230,7 +238,12 @@ with paper_tab:
         if side=="buy" and gross+cost>p["cash"]: st.error("Insufficient cash")
         elif side=="sell" and qty>held: st.error("Insufficient position")
         else:
-            p["cash"] += (-gross-cost if side=="buy" else gross-cost); p["positions"][oticker.upper()]=held+(qty if side=="buy" else -qty); p["orders"].append({"ticker":oticker.upper(),"side":side,"quantity":qty,"price":price,"fee":cost}); st.success("Simulated order recorded")
+            p["cash"] += (-gross-cost if side=="buy" else gross-cost); p["positions"][oticker.upper()]=held+(qty if side=="buy" else -qty); p["marks"][oticker.upper()]=price; p["orders"].append({"ticker":oticker.upper(),"side":side,"quantity":qty,"price":price,"fee":cost,"reason":"manual"}); st.success("Simulated order recorded")
+    p["marks"][oticker.upper()]=price
+    st.session_state.last_prices=p["marks"]
+    market_value=sum(q*p["marks"].get(t,0) for t,q in p["positions"].items()); nav=p["cash"]+market_value; p["equity_curve"].append({"step":len(p["equity_curve"])+1,"nav":nav}); curve=pd.DataFrame(p["equity_curve"]); peak=curve["nav"].cummax(); drawdown=(curve["nav"]/peak-1).min() if len(curve) else 0
+    c1,c2,c3=st.columns(3); c1.metric("Net asset value",f"${nav:,.2f}"); c2.metric("Return",f"{nav/p['initial_cash']-1:.2%}"); c3.metric("Max drawdown",f"{drawdown:.2%}")
+    if len(curve)>1: st.plotly_chart(go.Figure(go.Scatter(x=curve["step"],y=curve["nav"],mode="lines+markers",name="Paper NAV")).update_layout(height=280,margin=dict(l=10,r=10,t=20,b=10)),use_container_width=True)
     st.subheader("Positions"); st.json(p["positions"]); st.subheader("Orders"); st.dataframe(p["orders"], use_container_width=True, hide_index=True)
 
 with audit_tab:
