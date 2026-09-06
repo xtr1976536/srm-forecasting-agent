@@ -1,9 +1,6 @@
 from __future__ import annotations
 import numpy as np
-try:
-    from .engine import forecast
-except ImportError:
-    from engine import forecast
+from engine import forecast
 
 def _har_forecast(series: np.ndarray, horizon: int) -> float:
     """Fit a rolling HAR OLS using only observations before the forecast origin."""

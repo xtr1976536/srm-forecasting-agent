@@ -1,24 +1,14 @@
 import json,re
 from pathlib import Path
+from data import fetch_yahoo_proxy, fetch_stooq_proxy, load_csv_panel
+from engine import forecast
+from models import forecast_models
+from storage import Store
 try:
-    from .data import fetch_yahoo_proxy, fetch_stooq_proxy, load_csv_panel
-    from .engine import forecast
-    from .models import forecast_models
-    from .storage import Store
-except ImportError:
-    from data import fetch_yahoo_proxy, fetch_stooq_proxy, load_csv_panel
-    from engine import forecast
-    from models import forecast_models
-    from storage import Store
-
-try:
-    from .full_srm import run_full_srm
-except (ImportError, ModuleNotFoundError):
-    try:
-        from full_srm import run_full_srm
-    except (ImportError, ModuleNotFoundError) as exc:
-        run_full_srm = None
-        full_srm_import_error_message = str(exc)
+    from full_srm import run_full_srm
+except (ImportError, ModuleNotFoundError) as exc:
+    run_full_srm = None
+    full_srm_import_error_message = str(exc)
 
 class SRMForecastingAgent:
     def __init__(self,output_dir="srm_agent_runs"):

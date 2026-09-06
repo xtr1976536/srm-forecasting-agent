@@ -5,10 +5,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
-try:
-    from srm_agent.agent import SRMForecastingAgent
-except ModuleNotFoundError:
-    from agent import SRMForecastingAgent
+from agent import SRMForecastingAgent
 
 st.set_page_config(page_title="SRM Volatility Agent", page_icon="~", layout="wide")
 agent = SRMForecastingAgent("srm_agent_runs")
