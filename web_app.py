@@ -39,6 +39,24 @@ def api_forecast(tickers: str = Query(...), h: int = Query(1, ge=1, le=21), k: i
 @app.get("/health")
 def health(): return {"status":"ok","service":"srm-forecasting-agent"}
 
+@app.get("/api/assets")
+def assets():
+    return {"assets":["AAPL","MSFT","NVDA","AMZN","GOOGL","META","TSLA","AMD","JPM","SPY","QQQ"]}
+
+@app.post("/api/agent/task")
+def agent_task(request: dict):
+    text=request.get("request") or request.get("prompt")
+    if not text: raise HTTPException(status_code=400, detail="request or prompt is required")
+    try: return agent.run(text, request.get("csv_path"))
+    except (ValueError, RuntimeError) as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@app.post("/api/backtest")
+def backtest(request: dict):
+    # The first public release keeps the endpoint explicit and auditable. Full
+    # rolling evaluation uses the frozen research runner, not live proxy data.
+    if not request.get("tickers"): raise HTTPException(status_code=400, detail="tickers are required")
+    return {"status":"accepted","message":"Run backtests from the research-data adapter; live Yahoo mode is a proxy and is not used for paper-grade evaluation.","request":request}
+
 @app.get("/api/run/{run_id}")
 def get_run(run_id: str):
     result=agent.store.run(run_id)
@@ -53,6 +71,13 @@ def get_account(account_id: str):
     result=agent.store.account(account_id)
     if result is None: raise HTTPException(status_code=404, detail="account not found")
     return result
+
+@app.get("/api/paper/performance/{account_id}")
+def paper_performance(account_id: str):
+    result=agent.store.account(account_id)
+    if result is None: raise HTTPException(status_code=404, detail="account not found")
+    invested=result["initial_cash"]-result["cash"]
+    return {"account_id":account_id,"cash":result["cash"],"initial_cash":result["initial_cash"],"invested_cash":invested,"orders":len(result["orders"]),"positions":result["positions"]}
 
 @app.post("/api/paper/order")
 def place_order(account_id: str, ticker: str, side: str, quantity: float, price: float, transaction_cost: float = 0.0005):
