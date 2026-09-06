@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: srm-forecasting-agent
+    runtime: docker
+    dockerfilePath: ./srm_agent/Dockerfile
+    healthCheckPath: /
