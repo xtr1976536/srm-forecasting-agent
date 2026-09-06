@@ -21,7 +21,8 @@ class SRMForecastingAgent:
         self.store=Store(self.output_dir/"agent.sqlite3")
     def parse_task(self,request):
         text=request.lower(); hm=re.search(r"(?:horizon|h|未来)\s*[=:]?\s*(1|5|21)",text); km=re.search(r"(?:k|neighbor|近邻)\s*[=:]?\s*(\d+)",text); tickers=sorted(set(re.findall(r"\b[A-Z]{1,5}(?:\.[A-Z])?\b",request)))
-        return {"horizon":int(hm.group(1)) if hm else 1,"k":int(km.group(1)) if km else 20,"tickers":tickers,"cross_asset":not any(x in text for x in ("same asset","同资产"))}
+        criterion="mse" if re.search(r"(?:criterion|loss|估计准则)\s*[=:]?\s*mse",text) else "qlike"
+        return {"horizon":int(hm.group(1)) if hm else 1,"k":int(km.group(1)) if km else 20,"tickers":tickers,"cross_asset":not any(x in text for x in ("same asset","同资产")),"criterion":criterion}
     def _audit(self,panel,horizon,k):
         if len(panel.rv)<23+horizon: raise ValueError("at least 23+h observations are required")
         if panel.rv.index.has_duplicates or not panel.rv.index.is_monotonic_increasing: raise ValueError("dates must be unique and increasing")
@@ -43,7 +44,7 @@ class SRMForecastingAgent:
             if selected: panel=type(panel)(panel.rv[selected],panel.returns[selected],panel.source,panel.is_proxy,panel.iv[selected] if panel.iv is not None else None)
         audit=self._audit(panel,task["horizon"],task["k"]); models,srm=forecast_models(panel.rv,list(panel.rv.columns),task["horizon"],task["k"],"cross_asset" if task["cross_asset"] else "same_asset")
         try:
-            baseline=run_full_baselines(panel.rv,panel.iv,panel.returns,list(panel.rv.columns),task["horizon"],criterion="mse")
+            baseline=run_full_baselines(panel.rv,panel.iv,panel.returns,list(panel.rv.columns),task["horizon"],criterion=task["criterion"])
             models.update(baseline["predictions"])
             audit["baseline_window"]=baseline["window"]; audit["graph_audit"]=baseline["graph_audit"]
         except Exception as exc:
@@ -53,7 +54,7 @@ class SRMForecastingAgent:
         try:
             if run_full_srm is None:
                 raise RuntimeError(f"Full SRM engine is unavailable: {full_srm_import_error_message}")
-            full=run_full_srm(panel.rv,list(panel.rv.columns),task["horizon"],"cross_asset" if task["cross_asset"] else "same_asset",neighbors=task["k"])
+            full=run_full_srm(panel.rv,list(panel.rv.columns),task["horizon"],"cross_asset" if task["cross_asset"] else "same_asset",criterion=task["criterion"],neighbors=task["k"])
             models["srm"]=full["predictions"]; srm.update(full); srm["neighbors"]=[]; srm["weights"]=[]; srm["candidate_count"]=sum(int(x.get("Candidate_Count",0)) for x in full.get("diagnostics",[]))
         except Exception as exc:
             srm["full_engine_warning"]=str(exc)

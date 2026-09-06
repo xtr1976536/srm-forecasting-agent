@@ -4,14 +4,28 @@ from pathlib import Path
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from streamlit_autorefresh import st_autorefresh
 from agent import SRMForecastingAgent
+from intraday import yahoo_intraday, alpha_vantage_intraday
 
 st.set_page_config(page_title="SRM Volatility Agent", page_icon="~", layout="wide")
 agent = SRMForecastingAgent("srm_agent_runs")
 
+st.markdown("""<style>
+[data-testid="stAppViewContainer"]{background:#f5f7fa}.stApp{color:#172b3a}
+[data-testid="stSidebar"]{background:#102a43;color:white}
+[data-testid="stSidebar"] label,[data-testid="stSidebar"] p{color:#d9e7f2!important}
+h1,h2,h3{letter-spacing:0!important}.block-container{padding-top:2rem;max-width:1500px}
+[data-testid="stMetric"]{background:white;border:1px solid #d9e2ec;padding:14px;border-radius:6px}
+</style>""",unsafe_allow_html=True)
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_online_forecast(request_text):
     return agent.run(request_text)
+
+@st.cache_data(ttl=240, show_spinner=False)
+def cached_intraday(ticker, provider, key=""):
+    return alpha_vantage_intraday(ticker,key) if provider=="Alpha Vantage" else yahoo_intraday(ticker)
 
 st.title("SRM Volatility Forecasting Agent")
 st.caption("Daily volatility forecasts from geometrically similar market histories")
@@ -33,11 +47,16 @@ with st.sidebar:
     st.header("Daily forecast cycle")
     st.info("SRM is a daily model. Re-run after the market data source publishes a new daily close.")
     st.caption("No intraday auto-refresh: repeating the model before a new daily observation would not add information.")
+    st.divider()
+    st.header("Intraday monitor")
+    intraday_refresh=st.toggle("Refresh while this page is open",value=True)
+    intraday_minutes=st.select_slider("Interval (minutes)",options=[1,5,10,15],value=5)
+    if intraday_refresh: st_autorefresh(interval=intraday_minutes*60*1000,key="intraday_refresh")
 
 if "paper" not in st.session_state:
     st.session_state.paper = {"cash": 100000.0, "initial_cash": 100000.0, "positions": {}, "orders": []}
 
-forecast_tab, lab_tab, analog_tab, paper_tab, audit_tab = st.tabs(["Forecast Monitor", "Model Lab", "Analog Explorer", "Paper Trading", "Audit"])
+forecast_tab, intraday_tab, lab_tab, analog_tab, agent_tab, paper_tab, audit_tab = st.tabs(["Forecast Monitor", "Intraday Risk", "Model Lab", "Analog Explorer", "Agent", "Paper Trading", "Audit"])
 
 with forecast_tab:
     left, right = st.columns([1, 2])
@@ -48,6 +67,7 @@ with forecast_tab:
         horizon = st.selectbox("Forecast horizon", [1, 5, 21], index=1)
         neighbors = st.number_input("Neighbors K", min_value=5, max_value=100, value=20, step=5)
         scope = st.selectbox("Retrieval scope", ["cross_asset", "same_asset"])
+        criterion = st.selectbox("Estimation criterion", ["QLIKE", "MSE"])
         selected_models = st.multiselect("Models", ["srm", "historical_mean", "har", "har_iv", "gharm", "gharm_iv"], default=["srm", "historical_mean", "har"])
         st.caption("Cross-asset retrieval searches analog paths across all entered tickers. Same-asset retrieval searches only each target's own history.")
         run = st.button("Run daily forecast", type="primary", use_container_width=True)
@@ -61,7 +81,7 @@ with forecast_tab:
                 if uploaded is not None:
                     suffix = ".zip" if uploaded.name.lower().endswith(".zip") else ".csv"
                     tmp = Path("/tmp/srm_uploaded" + suffix); tmp.write_bytes(uploaded.getvalue()); csv_path = str(tmp)
-                request_text = f"forecast {' '.join(symbols)} horizon={horizon} k={neighbors} {scope}"
+                request_text = f"forecast {' '.join(symbols)} horizon={horizon} k={neighbors} {scope} criterion={criterion.lower()}"
                 st.session_state.last_request = request_text
                 with st.spinner("Building geometric memory, fitting channel weights, and retrieving analog paths..."):
                     result = agent.run(request_text, csv_path) if csv_path else cached_online_forecast(request_text)
@@ -108,6 +128,28 @@ with forecast_tab:
                 st.dataframe(result["diagnostics"][:20], use_container_width=True, hide_index=True)
             st.download_button("Download run JSON", json.dumps(result, indent=2), file_name=f"{result['run_id']}.json", mime="application/json")
 
+with intraday_tab:
+    st.subheader("Intraday risk monitor")
+    st.caption("This monitor observes the current session. It does not retrain the daily SRM and does not predict price direction.")
+    c1,c2=st.columns([1,2])
+    with c1:
+        live_ticker=st.text_input("Intraday ticker","AAPL")
+        provider=st.selectbox("Intraday provider",["Yahoo public","Alpha Vantage"])
+        if provider=="Alpha Vantage":
+            st.info("Configure ALPHA_VANTAGE_API_KEY in Streamlit Secrets. Keys are never entered into the public page.")
+        load_live=st.button("Load intraday monitor",type="primary")
+    with c2:
+        if load_live or st.session_state.get("intraday_loaded"):
+            st.session_state.intraday_loaded=True
+            try:
+                key=st.secrets.get("ALPHA_VANTAGE_API_KEY","") if provider=="Alpha Vantage" else ""
+                if provider=="Alpha Vantage" and not key: raise ValueError("Alpha Vantage key is not configured; select Yahoo public or ask the site owner to add a secret.")
+                live=cached_intraday(live_ticker.upper(),provider,key)
+                latest=live.iloc[-1]; m1,m2,m3=st.columns(3); m1.metric("Last price",f"{latest['price']:.2f}"); m2.metric("Provisional daily RV",f"{latest['cumulative_rv']:.6f}"); m3.metric("Annualized intraday vol",f"{latest['annualized_vol']:.2%}")
+                fig=go.Figure(); fig.add_trace(go.Scatter(x=live.index,y=live["price"],name="Price",yaxis="y1")); fig.add_trace(go.Scatter(x=live.index,y=live["annualized_vol"],name="Provisional volatility",yaxis="y2")); fig.update_layout(height=480,hovermode="x unified",yaxis=dict(title="Price"),yaxis2=dict(title="Annualized volatility",overlaying="y",side="right"),margin=dict(l=10,r=10,t=20,b=10)); st.plotly_chart(fig,use_container_width=True)
+                st.caption(f"Source: {live.attrs.get('source')} | Fetched: {live.attrs.get('fetched_at')} | Current-session values are provisional.")
+            except Exception as exc: st.error(str(exc))
+
 with lab_tab:
     st.subheader("Model Lab")
     st.info("Use Forecast Monitor to run the latest online forecast. Research-data rolling backtests remain available through the frozen experiment runner.")
@@ -125,6 +167,22 @@ with analog_tab:
     elif result:
         st.dataframe(result.get("diagnostics", []), use_container_width=True, hide_index=True)
     else: st.info("Run a forecast first.")
+
+with agent_tab:
+    st.subheader("Forecast agent")
+    st.caption("Describe the analysis you need. The agent resolves parameters and calls auditable numerical tools; it does not invent forecast values.")
+    prompt=st.text_area("Task", "Compare AAPL, MSFT and NVDA for the next 5 trading days using cross-asset SRM with K=20.", height=100)
+    resolved=agent.parse_task(prompt)
+    st.code(json.dumps(resolved,indent=2),language="json")
+    if st.button("Run agent task",type="primary"):
+        try:
+            with st.spinner("Running the resolved forecasting workflow..."):
+                agent_result=cached_online_forecast(prompt)
+            st.session_state.last_result=agent_result
+            st.success(f"Completed {agent_result['run_id']}")
+            st.dataframe([{"Ticker":k,"Predicted RV":v} for k,v in agent_result["predictions"].items()],use_container_width=True,hide_index=True)
+            st.json({"warnings":agent_result.get("warnings",[]),"audit":agent_result.get("data_audit",{})})
+        except Exception as exc: st.error(str(exc))
 
 with paper_tab:
     st.subheader("Volatility-aware paper portfolio")

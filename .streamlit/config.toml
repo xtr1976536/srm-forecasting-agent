@@ -1,0 +1,16 @@
+[server]
+maxUploadSize = 25
+maxMessageSize = 50
+enableXsrfProtection = true
+enableCORS = true
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#0B6E75"
+backgroundColor = "#F5F7FA"
+secondaryBackgroundColor = "#EAF0F4"
+textColor = "#172B3A"
+font = "sans serif"

@@ -43,5 +43,5 @@ class Store:
         delta=-(gross+cost) if side=="buy" else gross-cost
         oid="order_"+uuid.uuid4().hex[:12]; now=datetime.now(timezone.utc).isoformat()
         with self._connect() as db:
-            db.execute("update accounts set cash=cash+? where id=?",(delta,aid)); db.execute("insert into orders values(?,?,?,?,?,?,?)",(oid,aid,ticker,side,quantity,price,cost,now))
+            db.execute("update accounts set cash=cash+? where id=?",(delta,aid)); db.execute("insert into orders values(?,?,?,?,?,?,?,?)",(oid,aid,ticker,side,quantity,price,cost,now))
         return self.account(aid)

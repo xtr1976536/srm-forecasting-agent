@@ -3,3 +3,4 @@ __pycache__/
 srm_agent_runs/
 .env
 .venv/
+.streamlit/secrets.toml
