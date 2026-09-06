@@ -39,16 +39,19 @@ with forecast_tab:
         horizon = st.selectbox("Forecast horizon", [1, 5, 21], index=1)
         neighbors = st.number_input("Neighbors K", min_value=5, max_value=100, value=20, step=5)
         scope = st.selectbox("Retrieval scope", ["cross_asset", "same_asset"])
+        selected_models = st.multiselect("Models", ["srm", "historical_mean", "har", "har_iv", "gharm", "gharm_iv"], default=["srm", "historical_mean", "har"])
         run = st.button("Run forecast", type="primary", use_container_width=True)
     with right:
-        if run:
+        if run or (auto_refresh and st.session_state.get("last_request")):
             symbols = [x.strip().upper() for x in tickers.split(",") if x.strip()]
             try:
                 csv_path = None
                 if uploaded is not None:
                     suffix = ".zip" if uploaded.name.lower().endswith(".zip") else ".csv"
                     tmp = Path("/tmp/srm_uploaded" + suffix); tmp.write_bytes(uploaded.getvalue()); csv_path = str(tmp)
-                result = agent.run(f"forecast {' '.join(symbols)} horizon={horizon} k={neighbors} {scope}", csv_path)
+                request_text = f"forecast {' '.join(symbols)} horizon={horizon} k={neighbors} {scope}"
+                st.session_state.last_request = request_text
+                result = agent.run(request_text, csv_path)
                 st.session_state.last_result = result
             except Exception as exc:
                 st.error(str(exc))
@@ -60,16 +63,21 @@ with forecast_tab:
             st.subheader("Model comparison")
             rows=[]
             for model, values in result.get("model_predictions", {}).items():
-                for ticker, value in values.items(): rows.append({"Model":model,"Ticker":ticker,"Forecast RV":value})
+                if model not in selected_models: continue
+                if values is None:
+                    for ticker in result["predictions"]: rows.append({"Model":model,"Ticker":ticker,"Forecast RV":"Unavailable: requires IV/returns research data"})
+                else:
+                    for ticker, value in values.items(): rows.append({"Model":model,"Ticker":ticker,"Forecast RV":value})
             st.dataframe(rows, use_container_width=True, hide_index=True)
             st.subheader("Forecast curve")
-            history = st.session_state.get("history", [])
-            history.append({"timestamp":result["forecast_date"], **result["predictions"]})
-            st.session_state.history = history[-60:]
-            curve_df = pd.DataFrame(st.session_state.history)
             fig = go.Figure()
             for ticker in result["predictions"]:
-                fig.add_trace(go.Scatter(x=curve_df["timestamp"], y=curve_df[ticker], mode="lines+markers", name=ticker))
+                hist = result.get("recent_rv", {}).get(ticker, [])
+                if hist:
+                    fig.add_trace(go.Scatter(x=[x["date"] for x in hist], y=[x["value"] for x in hist], mode="lines", name=f"{ticker} realized/proxy"))
+                future = result.get("forecast_curve", {}).get(ticker, [])
+                if future:
+                    fig.add_trace(go.Scatter(x=[f"t+{x['step']}" for x in future], y=[x["value"] for x in future], mode="lines+markers", name=f"{ticker} SRM forecast", line=dict(dash="dash")))
             fig.update_layout(height=340, margin=dict(l=10,r=10,t=20,b=10), xaxis_title="Forecast origin", yaxis_title="Predicted RV", hovermode="x unified")
             st.plotly_chart(fig, use_container_width=True)
             st.subheader("Retrieved analog paths")

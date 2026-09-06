@@ -36,7 +36,9 @@ class SRMForecastingAgent:
             models["srm"]=full["predictions"]; srm.update(full); srm["neighbors"]=[]; srm["weights"]=[]; srm["candidate_count"]=sum(int(x.get("Candidate_Count",0)) for x in full.get("diagnostics",[]))
         except Exception as exc:
             srm["full_engine_warning"]=str(exc)
-        result=srm; result.update({"predictions":models["srm"],"model_predictions":models,"task":task,"data_audit":audit,"model":"SRM-v1-full-five-channel"})
+        result=srm; result.update({"predictions":models["srm"],"model_predictions":models,"task":task,"task_models":task.get("models"),"data_audit":audit,"model":"SRM-v1-full-five-channel"})
+        result["recent_rv"] = {t: [{"date": str(d.date()), "value": float(v)} for d,v in panel.rv[t].tail(60).items()] for t in panel.rv.columns}
+        result["forecast_curve"] = {t: [{"step": i+1, "value": float(v)} for i in range(task["horizon"])] for t,v in result["predictions"].items()}
         result["run_id"]=self.store.save_run(result)
         out=self.output_dir/f"run_{result['forecast_date'].replace('-','')}_h{task['horizon']}"; out.mkdir(exist_ok=True); (out/"result.json").write_text(json.dumps(result,indent=2)); (out/"audit.json").write_text(json.dumps(audit,indent=2)); return result
     def explain(self,result,ticker):
