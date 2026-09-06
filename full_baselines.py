@@ -36,14 +36,15 @@ def run_full_baselines(rv_frame, iv_frame, returns_frame, tickers, horizon, crit
     rv=rv_frame.loc[:,tickers].to_numpy(float); returns=returns_frame.loc[:,tickers].to_numpy(float)
     train, validation = _latest_window(len(rv), horizon); fit=np.concatenate((train, validation))
     graph, graph_audit = graph_weights(returns[fit])
-    x_base=_features(rv,iv,fit,horizon); y=np.stack([future_target(rv,int(t),horizon) for t in fit])
-    x_test_base=_features(rv,iv,[len(rv)],horizon)
+    y=np.stack([future_target(rv,int(t),horizon) for t in fit])
     specs=[("har",False,None),("gharm",False,graph)]
     if has_iv: specs += [("har_iv",True,None),("gharm_iv",True,graph)]
     outputs={}; audits={}
     for name,use_iv,g in specs:
-        x=x_base if g is None else np.concatenate((x_base,np.einsum("ij,tjp->tip",g,x_base)),axis=2)
-        xt=x_test_base if g is None else np.concatenate((x_test_base,np.einsum("ij,tjp->tip",g,x_test_base)),axis=2)
+        own=_features(rv,iv,fit,horizon,use_iv=use_iv)
+        own_test=_features(rv,iv,[len(rv)],horizon,use_iv=use_iv)
+        x=own if g is None else np.concatenate((own,np.einsum("ij,tjp->tip",g,own)),axis=2)
+        xt=own_test if g is None else np.concatenate((own_test,np.einsum("ij,tjp->tip",g,own_test)),axis=2)
         if criterion=="mse": intercept,slope=pooled_ols(x,y); fit_audit={"objective":float(np.mean((pooled_predict(x,intercept,slope)-y)**2)),"epochs":0}
         else: intercept,slope,fit_audit=pooled_qlike(x,y,BaselineFitConfig(seed=42),torch.device("cpu"))
         outputs[name]={t:float(max(v,1e-12)) for t,v in zip(tickers,pooled_predict(xt,intercept,slope)[0])}; audits[name]=fit_audit

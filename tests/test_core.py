@@ -5,6 +5,7 @@ from engine import forecast
 from intraday import _risk_curve
 from storage import Store
 from agent import SRMForecastingAgent
+from full_baselines import run_full_baselines
 
 
 def panel(n=80):
@@ -42,3 +43,11 @@ def test_paper_account_constraints(tmp_path):
 def test_agent_parses_user_parameters(tmp_path):
     task=SRMForecastingAgent(tmp_path).parse_task("forecast AAPL MSFT horizon=21 K=60 same asset criterion=MSE")
     assert task["horizon"]==21 and task["k"]==60 and task["cross_asset"] is False and task["criterion"]=="mse"
+
+def test_iv_baselines_use_iv_features():
+    rng=np.random.default_rng(8); n=850; columns=["AAA","BBB","CCC"]; index=pd.date_range("2020-01-01",periods=n)
+    rv=pd.DataFrame(np.exp(rng.normal(-4,.2,(n,3))),index=index,columns=columns)
+    iv=pd.DataFrame(np.exp(rng.normal(-3,.5,(n,3))),index=index,columns=columns)
+    returns=pd.DataFrame(rng.normal(0,.02,(n,3)),index=index,columns=columns)
+    result=run_full_baselines(rv,iv,returns,columns,1,"mse")["predictions"]
+    assert any(not np.isclose(result["har"][ticker],result["har_iv"][ticker]) for ticker in columns)
