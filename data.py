@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 import io
 import zipfile
+import urllib.request
 import numpy as np
 import pandas as pd
 
@@ -42,3 +43,19 @@ def fetch_yahoo_proxy(tickers,lookback_days=3000):
     returns=close.dropna(how="all").ffill().pct_change().replace([np.inf,-np.inf],np.nan).dropna(how="all")
     rv=returns.pow(2).rolling(5).sum().mul(252/5).dropna(how="all"); common=rv.index.intersection(returns.index); cols=[c for c in rv.columns if c in returns.columns]
     return MarketPanel(rv.loc[common,cols],returns.loc[common,cols],"Yahoo Finance daily Close",True)
+
+def fetch_stooq_proxy(tickers,lookback_days=1800):
+    """Public CSV fallback. Stooq data are daily; results remain RV proxies."""
+    frames=[]
+    end=datetime.utcnow().date(); start=(datetime.utcnow()-timedelta(days=lookback_days)).date()
+    for ticker in tickers:
+        symbol=ticker.lower().replace('.','-')
+        url=f"https://stooq.com/q/d/l/?s={symbol}.us&i=d&d1={start:%Y%m%d}&d2={end:%Y%m%d}"
+        try:
+            frame=pd.read_csv(url,parse_dates=["Date"]).set_index("Date")["Close"].rename(ticker); frames.append(frame)
+        except Exception:
+            continue
+    if not frames: raise ValueError("Public fallback returned no valid ticker data")
+    close=pd.concat(frames,axis=1).sort_index().ffill(); returns=close.pct_change().replace([np.inf,-np.inf],np.nan).dropna(how="all")
+    rv=returns.pow(2).rolling(5).sum().mul(252/5).dropna(how="all"); common=rv.index.intersection(returns.index); cols=[c for c in rv.columns if c in returns.columns]
+    return MarketPanel(rv.loc[common,cols],returns.loc[common,cols],"Stooq daily Close",True)

@@ -1,13 +1,13 @@
 import json,re
 from pathlib import Path
 try:
-    from .data import fetch_yahoo_proxy, load_csv_panel
+    from .data import fetch_yahoo_proxy, fetch_stooq_proxy, load_csv_panel
     from .engine import forecast
     from .models import forecast_models
     from .storage import Store
     from .full_srm import run_full_srm
 except ImportError:
-    from data import fetch_yahoo_proxy, load_csv_panel
+    from data import fetch_yahoo_proxy, fetch_stooq_proxy, load_csv_panel
     from engine import forecast
     from models import forecast_models
     from storage import Store
@@ -26,7 +26,16 @@ class SRMForecastingAgent:
         if not panel.rv.columns.equals(panel.returns.columns): raise ValueError("RV and return tickers are not aligned")
         return {"date_start":str(panel.rv.index.min().date()),"date_end":str(panel.rv.index.max().date()),"n_dates":len(panel.rv),"n_tickers":len(panel.rv.columns),"horizon":horizon,"k":k,"is_daily_rv_proxy":panel.is_proxy,"source":panel.source}
     def run(self,request,csv_path=None):
-        task=self.parse_task(request); panel=load_csv_panel(csv_path) if csv_path else fetch_yahoo_proxy(task["tickers"])
+        task=self.parse_task(request)
+        warnings=[]
+        if csv_path:
+            panel=load_csv_panel(csv_path)
+        else:
+            try: panel=fetch_yahoo_proxy(task["tickers"])
+            except Exception as exc:
+                warnings.append(f"Yahoo Finance failed: {exc}")
+                panel=fetch_stooq_proxy(task["tickers"])
+                warnings.append("Using Stooq public daily fallback; volatility is a daily-data RV proxy.")
         if task["tickers"]:
             selected=[t for t in task["tickers"] if t in panel.rv.columns]
             if selected: panel=type(panel)(panel.rv[selected],panel.returns[selected],panel.source,panel.is_proxy)
@@ -36,7 +45,7 @@ class SRMForecastingAgent:
             models["srm"]=full["predictions"]; srm.update(full); srm["neighbors"]=[]; srm["weights"]=[]; srm["candidate_count"]=sum(int(x.get("Candidate_Count",0)) for x in full.get("diagnostics",[]))
         except Exception as exc:
             srm["full_engine_warning"]=str(exc)
-        result=srm; result.update({"predictions":models["srm"],"model_predictions":models,"task":task,"task_models":task.get("models"),"data_audit":audit,"model":"SRM-v1-full-five-channel"})
+        result=srm; result.update({"predictions":models["srm"],"model_predictions":models,"task":task,"task_models":task.get("models"),"data_audit":audit,"model":"SRM-v1-full-five-channel","warnings":warnings})
         result["recent_rv"] = {t: [{"date": str(d.date()), "value": float(v)} for d,v in panel.rv[t].tail(60).items()] for t in panel.rv.columns}
         result["forecast_curve"] = {t: [{"step": i+1, "value": float(v)} for i in range(task["horizon"])] for t,v in result["predictions"].items()}
         result["run_id"]=self.store.save_run(result)
