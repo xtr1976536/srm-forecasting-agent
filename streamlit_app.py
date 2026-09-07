@@ -61,6 +61,7 @@ forecast_tab, intraday_tab, lab_tab, analog_tab, agent_tab, paper_tab, audit_tab
 with forecast_tab:
     left, right = st.columns([1, 2])
     with left:
+        st.subheader("1. Configure")
         data_mode = st.selectbox("Data source", ["Yahoo daily RV proxy", "User RV dataset"])
         uploaded = st.file_uploader("Upload RV CSV (optional)", type=["csv","zip"]) if data_mode == "User RV dataset" else None
         tickers = st.text_input("Tickers", "AAPL,MSFT,NVDA")
@@ -72,6 +73,7 @@ with forecast_tab:
         st.caption("Cross-asset retrieval searches analog paths across all entered tickers. Same-asset retrieval searches only each target's own history.")
         run = st.button("Run daily forecast", type="primary", use_container_width=True)
     with right:
+        st.subheader("2. Results")
         if run:
             symbols = [x.strip().upper() for x in tickers.split(",") if x.strip()]
             try:
@@ -94,6 +96,8 @@ with forecast_tab:
             source=result.get("data_audit",{}).get("source","Unknown")
             st.success(f"Data through {result['forecast_date']} | {result['horizon']}-day average forecast | {source}")
             st.caption(f"Last successful update: {result.get('data_timestamp','not recorded')} | Run ID: {result.get('run_id','')}")
+            with st.expander("What each result means", expanded=False):
+                st.markdown("- **Predicted RV:** expected volatility magnitude over the selected horizon. It does not indicate whether price will rise or fall.\n- **SRM:** retrieves geometrically similar historical RV paths; the Transformer only weights geometry channels.\n- **HAR/GHARM:** parametric benchmark forecasts. IV and graph variants require a user dataset containing the corresponding inputs.\n- **Cross-asset:** candidates can come from all selected assets; **same-asset:** each target uses only its own history.")
             st.subheader("Forecast summary")
             cols=st.columns(min(4,len(result["predictions"])))
             for idx,(ticker,value) in enumerate(result["predictions"].items()):
@@ -109,18 +113,21 @@ with forecast_tab:
                 else:
                     for ticker, value in values.items(): rows.append({"Model":model,"Ticker":ticker,"Forecast RV":value})
             st.dataframe(rows, use_container_width=True, hide_index=True)
-            st.subheader("Historical volatility path and horizon-average forecast")
+            st.subheader("Historical volatility path")
             fig = go.Figure()
             for ticker in result["predictions"]:
                 hist = result.get("recent_rv", {}).get(ticker, [])
                 if hist:
                     fig.add_trace(go.Scatter(x=[x["date"] for x in hist], y=[x["value"] for x in hist], mode="lines", name=f"{ticker} realized/proxy"))
-                future = result.get("forecast_curve", {}).get(ticker, [])
-                if future:
-                    fig.add_trace(go.Scatter(x=[f"Forecast h={result['horizon']}"] , y=[future[0]["value"]], mode="markers", marker=dict(size=12), name=f"{ticker} forecast average"))
-            fig.update_layout(height=380, margin=dict(l=10,r=10,t=20,b=10), xaxis_title="Date / forecast horizon", yaxis_title="RV or daily-data RV proxy", hovermode="x unified")
+            fig.update_layout(height=340, margin=dict(l=10,r=10,t=20,b=10), xaxis_title="Date", yaxis_title="RV or daily-data RV proxy", hovermode="x unified")
             st.plotly_chart(fig, use_container_width=True)
-            st.caption("The point labelled Forecast is the predicted average RV over the selected horizon. SRM does not claim to predict a separate daily path inside that horizon.")
+            st.subheader("Forecast term structure")
+            term_fig=go.Figure()
+            for ticker,value in result["predictions"].items():
+                term_fig.add_trace(go.Bar(x=[f"h={result['horizon']}"],y=[value],name=ticker))
+            term_fig.update_layout(height=280, barmode="group", margin=dict(l=10,r=10,t=20,b=10), xaxis_title="Forecast horizon", yaxis_title="Predicted average RV")
+            st.plotly_chart(term_fig,use_container_width=True)
+            st.caption("The forecast is an average over the selected horizon. It is not a separately predicted daily price or RV path.")
             st.subheader("Retrieved analog paths")
             if result.get("neighbors"):
                 st.dataframe(result["neighbors"][:10], use_container_width=True, hide_index=True)
