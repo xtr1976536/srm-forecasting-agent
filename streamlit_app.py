@@ -32,6 +32,15 @@ st.caption("Daily volatility forecasts from geometrically similar market histori
 st.warning("Research and paper-trading only. Not investment advice. Public market data produce a daily RV proxy, not high-frequency realized volatility.")
 st.info("SRM forecasts volatility magnitude, not price direction. Use the output for risk sizing and simulation; a separate return model would be required for a bullish/bearish price forecast.")
 
+MODEL_LABELS = {
+    "historical_mean": "Historical mean",
+    "har": "HAR",
+    "har_iv": "HAR + IV",
+    "gharm": "GHAR",
+    "gharm_iv": "GHAR + IV",
+    "srm": "SRM (five-channel geometry)",
+}
+
 with st.expander("How to use / 使用说明", expanded=True):
     st.markdown("""
     **1. Choose data and assets.** Use Yahoo for a quick public-data demonstration, or upload your own realized-volatility CSV/ZIP. Enter several tickers for cross-asset retrieval.
@@ -69,7 +78,7 @@ with forecast_tab:
         neighbors = st.number_input("Neighbors K", min_value=5, max_value=100, value=20, step=5)
         scope = st.selectbox("Retrieval scope", ["cross_asset", "same_asset"])
         criterion = st.selectbox("Estimation criterion", ["QLIKE", "MSE"])
-        selected_models = st.multiselect("Models", ["srm", "historical_mean", "har", "har_iv", "gharm", "gharm_iv"], default=["srm", "historical_mean", "har"])
+        selected_models = st.multiselect("Models", list(MODEL_LABELS), format_func=lambda x: MODEL_LABELS[x], default=["srm", "historical_mean", "har"])
         st.caption("Cross-asset retrieval searches analog paths across all entered tickers. Same-asset retrieval searches only each target's own history.")
         run = st.button("Run daily forecast", type="primary", use_container_width=True)
     with right:
@@ -109,9 +118,9 @@ with forecast_tab:
             for model, values in result.get("model_predictions", {}).items():
                 if model not in selected_models: continue
                 if values is None:
-                    for ticker in result["predictions"]: rows.append({"Model":model,"Ticker":ticker,"Forecast RV":"Unavailable: requires IV/returns research data"})
+                    for ticker in result["predictions"]: rows.append({"Model":MODEL_LABELS[model],"Ticker":ticker,"Forecast RV":"Unavailable: upload IV/returns data"})
                 else:
-                    for ticker, value in values.items(): rows.append({"Model":model,"Ticker":ticker,"Forecast RV":value})
+                    for ticker, value in values.items(): rows.append({"Model":MODEL_LABELS[model],"Ticker":ticker,"Forecast RV":value})
             st.dataframe(rows, use_container_width=True, hide_index=True)
             st.subheader("Historical volatility path")
             fig = go.Figure()
@@ -128,6 +137,7 @@ with forecast_tab:
             term_fig.update_layout(height=280, barmode="group", margin=dict(l=10,r=10,t=20,b=10), xaxis_title="Forecast horizon", yaxis_title="Predicted average RV")
             st.plotly_chart(term_fig,use_container_width=True)
             st.caption("The forecast is an average over the selected horizon. It is not a separately predicted daily price or RV path.")
+            st.download_button("Download forecast CSV", pd.DataFrame([{"Ticker":t,"SRM_forecast":v} for t,v in result["predictions"].items()]).to_csv(index=False), "forecast.csv", "text/csv")
             st.subheader("Retrieved analog paths")
             if result.get("neighbors"):
                 st.dataframe(result["neighbors"][:10], use_container_width=True, hide_index=True)
