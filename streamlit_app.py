@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 from agent import SRMForecastingAgent
 from intraday import yahoo_intraday, alpha_vantage_intraday
+from snapshot import write_snapshot
 
 st.set_page_config(page_title="SRM Volatility Agent", page_icon="~", layout="wide")
 agent = SRMForecastingAgent("srm_agent_runs")
@@ -106,6 +107,8 @@ with forecast_tab:
                 with st.spinner("Building geometric memory, fitting channel weights, and retrieving analog paths..."):
                     result = agent.run(request_text, csv_path) if csv_path else cached_online_forecast(request_text)
                 st.session_state.last_result = result
+                if csv_path is None:
+                    write_snapshot(result, "public_snapshots")
             except Exception as exc:
                 st.error(str(exc))
         result = st.session_state.get("last_result")
@@ -145,6 +148,12 @@ with forecast_tab:
             term_fig.update_layout(height=280, barmode="group", margin=dict(l=10,r=10,t=20,b=10), xaxis_title="Forecast horizon", yaxis_title="Predicted average RV")
             st.plotly_chart(term_fig,use_container_width=True)
             st.caption("The forecast is an average over the selected horizon. It is not a separately predicted daily price or RV path.")
+            st.subheader("Independent return scenario")
+            st.caption("This is a separate rolling-return scenario model. It is not SRM and should not be read as a guaranteed price-direction forecast.")
+            scenario_rows=[]
+            for ticker, scenario in result.get("return_scenarios", {}).items():
+                scenario_rows.append({"Ticker":ticker,"Expected price":scenario["expected_price"],"Lower band":scenario["lower_price"],"Upper band":scenario["upper_price"],"P(positive return)":scenario["probability_positive_return"]})
+            st.dataframe(scenario_rows,use_container_width=True,hide_index=True)
             st.subheader("Retrieved analog paths")
             if result.get("neighbors"):
                 st.dataframe(result["neighbors"][:10], use_container_width=True, hide_index=True)

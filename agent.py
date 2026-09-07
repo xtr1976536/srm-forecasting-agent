@@ -6,6 +6,8 @@ from engine import forecast
 from models import forecast_models
 from storage import Store
 from backtest import run_backtest
+from direction import return_scenario
+from snapshot import write_snapshot
 try:
     from full_srm import run_full_srm
 except (ImportError, ModuleNotFoundError) as exc:
@@ -65,6 +67,10 @@ class SRMForecastingAgent:
         # SRM forecasts a horizon average, not a sequence of daily values.
         # Keep one explicitly labelled term-structure point per requested horizon.
         result["forecast_curve"] = {t: [{"horizon": task["horizon"], "value": float(v)}] for t,v in result["predictions"].items()}
+        result["return_scenarios"] = {
+            t: return_scenario(panel.returns[t].to_numpy(float), float(panel.rv[t].iloc[-1]), task["horizon"])
+            for t in panel.rv.columns
+        }
         result["run_id"]=self.store.save_run(result)
         out=self.output_dir/f"run_{result['forecast_date'].replace('-','')}_h{task['horizon']}"; out.mkdir(exist_ok=True); (out/"result.json").write_text(json.dumps(result,indent=2)); (out/"audit.json").write_text(json.dumps(audit,indent=2)); return result
     def backtest(self,request,csv_path=None,model="srm",origins=3):

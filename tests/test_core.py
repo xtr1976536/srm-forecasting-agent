@@ -8,6 +8,8 @@ from agent import SRMForecastingAgent
 from full_baselines import run_full_baselines
 from backtest import run_backtest
 from data import MarketPanel
+from direction import return_scenario
+from snapshot import anonymized_snapshot
 
 
 def panel(n=80):
@@ -61,3 +63,10 @@ def test_backtest_uses_completed_future_only():
     result=run_backtest(MarketPanel(rv,returns,"test",True),columns,1,"har",origins=2)
     assert result["audit"]["future_data_used_for_fit"] is False
     assert len(result["predictions"])==4
+
+def test_return_scenario_and_public_snapshot_are_safe():
+    scenario=return_scenario(np.array([0.01,-0.02,0.005]*10),100,5)
+    assert scenario["lower_price"] < scenario["expected_price"] < scenario["upper_price"]
+    result={"run_id":"run_x","forecast_date":"2026-01-01","horizon":5,"predictions":{"AAA":0.1},"task":{"criterion":"qlike"},"data_audit":{"is_daily_rv_proxy":True},"warnings":[]}
+    snap=anonymized_snapshot(result)
+    assert "cash" not in snap and "orders" not in snap and snap["audit_status"]=="passed"
