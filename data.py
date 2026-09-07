@@ -33,7 +33,7 @@ def load_csv_panel(path):
         returns=pd.read_csv(ret_file,parse_dates=["Date"]).set_index("Date").sort_index() if ret_file.exists() else rv.pct_change()
         iv_file=root/"merged_iv_data_filled.csv" if root.is_dir() else root.with_name("merged_iv_data_filled.csv")
         iv=pd.read_csv(iv_file,parse_dates=["Date"]).set_index("Date").sort_index() if iv_file.exists() else None
-    returns=returns.replace([np.inf,-np.inf],np.nan).fillna(0.0)
+    returns=returns.replace([np.inf,-np.inf],np.nan)
     common=rv.index.intersection(returns.index).drop_duplicates().sort_values(); cols=sorted(set(rv.columns)&set(returns.columns))
     rv,returns=rv.loc[common,cols].astype(float),returns.loc[common,cols].astype(float)
     valid=np.isfinite(rv).all(axis=0)&(rv>0).all(axis=0)&np.isfinite(returns).all(axis=0); cols=[c for c,k in zip(cols,valid) if k]

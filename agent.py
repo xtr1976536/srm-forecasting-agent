@@ -60,7 +60,9 @@ class SRMForecastingAgent:
             full=run_full_srm(panel.rv,list(panel.rv.columns),task["horizon"],"cross_asset" if task["cross_asset"] else "same_asset",criterion=task["criterion"],neighbors=task["k"])
             models["srm"]=full["predictions"]; srm.update(full); srm["neighbors"]=[]; srm["weights"]=[]; srm["candidate_count"]=sum(int(x.get("Candidate_Count",0)) for x in full.get("diagnostics",[]))
         except Exception as exc:
-            srm["full_engine_warning"]=str(exc)
+            # Never expose the lightweight legacy engine as if it were the
+            # paper's full five-channel SRM.
+            raise RuntimeError(f"Full five-channel SRM failed: {exc}") from exc
         if result_warning: warnings.append(result_warning)
         result=srm; result.update({"predictions":models["srm"],"model_predictions":models,"task":task,"task_models":task.get("models"),"data_audit":audit,"data_timestamp":datetime.now(timezone.utc).isoformat(),"model":"SRM-v1-full-five-channel","warnings":warnings})
         result["recent_rv"] = {t: [{"date": str(d.date()), "value": float(v)} for d,v in panel.rv[t].tail(60).items()] for t in panel.rv.columns}
@@ -72,6 +74,9 @@ class SRMForecastingAgent:
             for t in panel.rv.columns
         }
         result["run_id"]=self.store.save_run(result)
+        if csv_path is None:
+            # Public snapshots contain only aggregates and never user uploads.
+            write_snapshot(result, self.output_dir / "public_snapshots")
         out=self.output_dir/f"run_{result['forecast_date'].replace('-','')}_h{task['horizon']}"; out.mkdir(exist_ok=True); (out/"result.json").write_text(json.dumps(result,indent=2)); (out/"audit.json").write_text(json.dumps(audit,indent=2)); return result
     def backtest(self,request,csv_path=None,model="srm",origins=3):
         task=self.parse_task(request)

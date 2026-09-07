@@ -70,3 +70,15 @@ def test_return_scenario_and_public_snapshot_are_safe():
     result={"run_id":"run_x","forecast_date":"2026-01-01","horizon":5,"predictions":{"AAA":0.1},"task":{"criterion":"qlike"},"data_audit":{"is_daily_rv_proxy":True},"warnings":[]}
     snap=anonymized_snapshot(result)
     assert "cash" not in snap and "orders" not in snap and snap["audit_status"]=="passed"
+
+def test_missing_returns_are_not_silently_filled(tmp_path):
+    idx=pd.date_range("2025-01-01",periods=30); cols=["AAA"]
+    rv=pd.DataFrame(np.ones((30,1))*0.01,index=idx,columns=cols); ret=pd.DataFrame(np.ones((30,1))*0.01,index=idx,columns=cols); ret.iloc[5,0]=np.nan
+    rv.index.name=ret.index.name="Date"; rv.to_csv(tmp_path/"merged_rv_data_filled.csv"); ret.to_csv(tmp_path/"daily_returns.csv")
+    try:
+        from data import load_csv_panel
+        load_csv_panel(tmp_path)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("incomplete returns must be rejected")
