@@ -32,6 +32,15 @@ st.caption("Daily volatility forecasts from geometrically similar market histori
 st.warning("Research and paper-trading only. Not investment advice. Public market data produce a daily RV proxy, not high-frequency realized volatility.")
 st.info("SRM forecasts volatility magnitude, not price direction. Use the output for risk sizing and simulation; a separate return model would be required for a bullish/bearish price forecast.")
 
+MODEL_LABELS = {
+    "srm": "SRM (five-channel geometry)",
+    "historical_mean": "Historical mean",
+    "har": "HAR",
+    "gharm": "GHAR",
+    "har_iv": "HAR + IV",
+    "gharm_iv": "GHAR + IV",
+}
+
 with st.expander("How to use / 使用说明", expanded=True):
     st.markdown("""
     **1. Choose data and assets.** Use Yahoo for a quick public-data demonstration, or upload your own realized-volatility CSV/ZIP. Enter several tickers for cross-asset retrieval.
@@ -42,6 +51,14 @@ with st.expander("How to use / 使用说明", expanded=True):
 
     **中文：** 先选择数据和股票，再选择预测期限与近邻数，最后点击 **Run daily forecast**。预测值表示未来期限内的平均波动率，而不是价格涨跌方向。
     """)
+
+if "last_result" not in st.session_state:
+    st.caption("SRM is the default model. The page prepares a daily SRM forecast automatically; use the controls below to change the universe, horizon or retrieval settings.")
+    try:
+        with st.spinner("Preparing the default SRM daily forecast..."):
+            st.session_state.last_result = cached_online_forecast("forecast AAPL MSFT NVDA horizon=5 k=20 cross_asset criterion=qlike")
+    except Exception as exc:
+        st.warning(f"The automatic default forecast is unavailable right now: {exc}. Configure the controls and retry.")
 
 with st.sidebar:
     st.header("Daily forecast cycle")
@@ -69,7 +86,7 @@ with forecast_tab:
         neighbors = st.number_input("Neighbors K", min_value=5, max_value=100, value=20, step=5)
         scope = st.selectbox("Retrieval scope", ["cross_asset", "same_asset"])
         criterion = st.selectbox("Estimation criterion", ["QLIKE", "MSE"])
-        selected_models = st.multiselect("Models", ["srm", "historical_mean", "har", "har_iv", "gharm", "gharm_iv"], default=["srm", "historical_mean", "har"])
+        selected_models = st.multiselect("Models", list(MODEL_LABELS), format_func=lambda x: MODEL_LABELS[x], default=["srm", "historical_mean", "har"])
         st.caption("Cross-asset retrieval searches analog paths across all entered tickers. Same-asset retrieval searches only each target's own history.")
         run = st.button("Run daily forecast", type="primary", use_container_width=True)
     with right:
@@ -109,9 +126,9 @@ with forecast_tab:
             for model, values in result.get("model_predictions", {}).items():
                 if model not in selected_models: continue
                 if values is None:
-                    for ticker in result["predictions"]: rows.append({"Model":model,"Ticker":ticker,"Forecast RV":"Unavailable: requires IV/returns research data"})
+                    for ticker in result["predictions"]: rows.append({"Model":MODEL_LABELS.get(model,model),"Ticker":ticker,"Forecast RV":"Unavailable: upload IV/returns data"})
                 else:
-                    for ticker, value in values.items(): rows.append({"Model":model,"Ticker":ticker,"Forecast RV":value})
+                    for ticker, value in values.items(): rows.append({"Model":MODEL_LABELS.get(model,model),"Ticker":ticker,"Forecast RV":value})
             st.dataframe(rows, use_container_width=True, hide_index=True)
             st.subheader("Historical volatility path")
             fig = go.Figure()
