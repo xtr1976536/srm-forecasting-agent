@@ -5,9 +5,11 @@ from pathlib import Path
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import HTMLResponse
 from .agent import SRMForecastingAgent
+from .llm_agent import LLMForecastingAgent
 
 app = FastAPI(title="SRM Volatility Forecasting Agent", version="0.1.0")
 agent = SRMForecastingAgent("srm_agent_runs")
+llm_agent = LLMForecastingAgent(agent)
 
 HTML = r"""<!doctype html>
 <html><head><meta charset="utf-8"><title>SRM Forecasting Agent</title>
@@ -51,6 +53,16 @@ def agent_task(request: dict):
     text=request.get("request") or request.get("prompt")
     if not text: raise HTTPException(status_code=400, detail="request or prompt is required")
     try: return agent.run(text, request.get("csv_path"))
+    except (ValueError, RuntimeError) as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@app.post("/api/agent/llm")
+def llm_agent_task(request: dict):
+    text = request.get("request") or request.get("prompt")
+    if not text: raise HTTPException(status_code=400, detail="request or prompt is required")
+    try:
+        result = llm_agent.run(text, request.get("csv_path"))
+        result["llm_explanation"] = llm_agent.explain(result)
+        return result
     except (ValueError, RuntimeError) as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 @app.post("/api/backtest")

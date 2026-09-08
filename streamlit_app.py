@@ -6,11 +6,13 @@ import pandas as pd
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 from agent import SRMForecastingAgent
+from llm_agent import LLMForecastingAgent
 from intraday import yahoo_intraday, alpha_vantage_intraday
 from snapshot import write_snapshot
 
 st.set_page_config(page_title="SRM Volatility Agent", page_icon="~", layout="wide")
 agent = SRMForecastingAgent("srm_agent_runs")
+llm_agent = LLMForecastingAgent(agent)
 
 st.markdown("""<style>
 [data-testid="stAppViewContainer"]{background:#f5f7fa}.stApp{color:#172b3a}
@@ -222,19 +224,18 @@ with analog_tab:
     else: st.info("Run a forecast first.")
 
 with agent_tab:
-    st.subheader("Forecast agent")
-    st.caption("Describe the analysis you need. The agent resolves parameters and calls auditable numerical tools; it does not invent forecast values.")
+    st.subheader("LLM tool-use prototype")
+    st.caption("An optional cloud LLM translates your request into a validated SRM tool call. The numerical engine remains the source of truth; no API key means deterministic fallback mode.")
     prompt=st.text_area("Task", "Compare AAPL, MSFT and NVDA for the next 5 trading days using cross-asset SRM with K=20.", height=100)
-    resolved=agent.parse_task(prompt)
-    st.code(json.dumps(resolved,indent=2),language="json")
-    if st.button("Run agent task",type="primary"):
+    if st.button("Run LLM tool task",type="primary"):
         try:
             with st.spinner("Running the resolved forecasting workflow..."):
-                agent_result=cached_online_forecast(prompt)
+                agent_result=llm_agent.run(prompt)
             st.session_state.last_result=agent_result
             st.success(f"Completed {agent_result['run_id']}")
             st.dataframe([{"Ticker":k,"Predicted RV":v} for k,v in agent_result["predictions"].items()],use_container_width=True,hide_index=True)
-            st.json({"warnings":agent_result.get("warnings",[]),"audit":agent_result.get("data_audit",{})})
+            st.write(llm_agent.explain(agent_result))
+            st.json({"agent":agent_result.get("llm_agent",{}),"warnings":agent_result.get("warnings",[]),"audit":agent_result.get("data_audit",{})})
         except Exception as exc: st.error(str(exc))
 
 with paper_tab:
