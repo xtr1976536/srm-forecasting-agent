@@ -51,7 +51,8 @@ class LLMForecastingAgent:
 
     @staticmethod
     def _fallback_parse(text: str) -> dict[str, Any]:
-        tickers = sorted(set(re.findall(r"\b[A-Z]{1,5}(?:\.[A-Z])?\b", text)))
+        reserved={"K","H","MSE","QLIKE","SRM","RV","IV","LLM"}
+        tickers = sorted(set(re.findall(r"\b[A-Z]{1,5}(?:\.[A-Z])?\b", text))-reserved)
         low = text.lower()
         hm = re.search(r"(?:horizon|h|未来)\s*[=:]?\s*(1|5|21)", low)
         km = re.search(r"(?:k|neighbor|近邻)\s*[=:]?\s*(\d+)", low)

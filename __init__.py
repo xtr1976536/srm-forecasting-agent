@@ -1,3 +1,6 @@
 """Auditable SRM forecasting agent."""
-from .agent import SRMForecastingAgent
+try:
+    from .agent import SRMForecastingAgent
+except ImportError:
+    from agent import SRMForecastingAgent
 __all__ = ["SRMForecastingAgent"]

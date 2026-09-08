@@ -4,12 +4,15 @@ import json
 from pathlib import Path
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import HTMLResponse
-from .agent import SRMForecastingAgent
-from .llm_agent import LLMForecastingAgent
+from agent import SRMForecastingAgent
+from llm_agent import LLMForecastingAgent
+from research_agent import ResearchOrchestrator
+from research_agent.decision import evaluate_decision
 
 app = FastAPI(title="SRM Volatility Forecasting Agent", version="0.1.0")
 agent = SRMForecastingAgent("srm_agent_runs")
 llm_agent = LLMForecastingAgent(agent)
+research_agent = ResearchOrchestrator()
 
 HTML = r"""<!doctype html>
 <html><head><meta charset="utf-8"><title>SRM Forecasting Agent</title>
@@ -43,6 +46,97 @@ def api_forecast(tickers: str = Query(...), h: int = Query(1, ge=1, le=21), k: i
 
 @app.get("/health")
 def health(): return {"status":"ok","service":"srm-forecasting-agent"}
+
+@app.get("/ready")
+def ready():
+    import os
+    return {"status":"ready","service":"research-copilot","provider":os.getenv("LLM_PROVIDER", "mock"),"cloud_llm_configured": bool(os.getenv("LLM_API_KEY") or os.getenv("MOONSHOT_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("GROQ_API_KEY"))}
+
+@app.get("/version")
+def version(): return {"version":"0.2.0-research-copilot","capabilities":["web-search","paper-search","srm","world-model","decision-simulation","citations"]}
+
+@app.post("/api/research/chat")
+def research_chat(request: dict):
+    question=request.get("question") or request.get("prompt")
+    if not question: raise HTTPException(status_code=400, detail="question is required")
+    return research_agent.run(question, request.get("mode", "research"))
+
+@app.post("/api/research/plan")
+def research_plan(request: dict):
+    question=request.get("question") or request.get("prompt")
+    if not question: raise HTTPException(status_code=400, detail="question is required")
+    return {"question":question,"plan":research_agent.plan(question)}
+
+@app.post("/api/research/continue")
+def research_continue(request: dict):
+    existing=research_agent.store.get(request.get("run_id", ""))
+    if not existing: raise HTTPException(status_code=404, detail="research run not found")
+    return research_agent.run(existing["question"], request.get("mode", "research"))
+
+@app.post("/api/research/stop")
+def research_stop(request: dict):
+    result=research_agent.store.stop(request.get("run_id", ""))
+    if not result: raise HTTPException(status_code=404, detail="research run not found")
+    return result
+
+@app.get("/api/research/run/{run_id}")
+def research_run(run_id: str):
+    result=research_agent.store.get(run_id)
+    if not result: raise HTTPException(status_code=404, detail="research run not found")
+    return result
+
+@app.delete("/api/research/run/{run_id}")
+def research_delete(run_id: str): return research_agent.store.delete(run_id)
+
+@app.get("/api/research/report/{run_id}")
+def research_report(run_id: str):
+    result=research_agent.store.get(run_id)
+    if not result: raise HTTPException(status_code=404, detail="research run not found")
+    return {"run_id":run_id,"markdown":research_agent.report(result)}
+
+@app.post("/api/search/web")
+def search_web(request: dict):
+    from research_agent.tools import web_search
+    return {"results":[x.json() for x in web_search(request.get("query", ""), min(int(request.get("limit", 5)), 10))]}
+
+@app.post("/api/search/papers")
+def search_papers(request: dict):
+    from research_agent.tools import paper_search
+    return {"results":[x.json() for x in paper_search(request.get("query", ""), min(int(request.get("limit", 5)), 10))]}
+
+@app.post("/api/github/inspect")
+def github_inspect(request: dict):
+    from research_agent.tools import github_readme
+    try: return github_readme(request["owner"], request["repo"]).json()
+    except (KeyError, ValueError) as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@app.post("/api/world-model/simulate")
+def world_model_simulate(request: dict):
+    from research_agent.world_model import simulate
+    return simulate(request.get("horizon",5),request.get("n_samples",100),request.get("seed",20260721),request.get("assets"),request.get("public_shock",True))
+
+@app.post("/api/decision/evaluate")
+def decision_evaluate(request: dict):
+    try: return evaluate_decision(request.get("paths", []), request.get("actions"), request.get("constraints"), float(request.get("transaction_cost", 0)))
+    except ValueError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@app.post("/api/memory/add")
+def memory_add(request: dict):
+    if not request.get("title") or not request.get("content"): raise HTTPException(status_code=400, detail="title and content are required")
+    if any(x in json.dumps(request).lower() for x in ("api_key", "secret", "bearer ")): raise HTTPException(status_code=400, detail="secrets cannot be stored")
+    return research_agent.store.add_memory(request["title"],request["content"],request.get("metadata"))
+
+@app.post("/api/memory/search")
+def memory_search(request: dict): return {"results":research_agent.store.search_memory(request.get("query", ""))}
+
+@app.get("/api/memory/{document_id}")
+def memory_get(document_id: str):
+    result=research_agent.store.get_memory(document_id)
+    if not result: raise HTTPException(status_code=404, detail="memory document not found")
+    return result
+
+@app.delete("/api/memory/{document_id}")
+def memory_delete(document_id: str): return research_agent.store.delete_memory(document_id)
 
 @app.get("/api/assets")
 def assets():

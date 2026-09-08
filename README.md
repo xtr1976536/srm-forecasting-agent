@@ -37,6 +37,50 @@ RV proxy; paper-grade experiments should use the research RV adapter.
 
 ## Web dashboard
 
+## Research copilot MVP
+
+The research-agent layer adds a grounded research loop around the unchanged
+forecasting engine. `POST /api/research/chat` accepts a natural-language
+question and returns a visible plan, tool trace, evidence records, model
+outputs, and a citation-grounded answer. The public tools include controlled
+web search, OpenAlex paper search, SRM forecasting, research decision
+simulation, and teacher research-fit cards. `/health`, `/ready`, and `/version`
+expose deployment status without revealing secrets.
+
+The first world-model integration is intentionally auditable: it reports the
+volatility-world-model protocol and keeps simulation execution separate from
+the SRM engine until an audited checkpoint/config is supplied. Decision
+simulation is research-only and never places trades.
+
+## API and deployment
+
+Run the API locally with `python run_web.py`, or run the research UI with
+`streamlit run streamlit_app.py`. `/health`, `/ready`, and `/version` are safe
+to use as deployment probes. Configure a cloud model only through environment
+variables listed in `.env.example`; no key is required for deterministic
+fallback mode.
+
+Important endpoints include `POST /api/research/chat`, `POST /api/search/web`,
+`POST /api/search/papers`, `POST /api/github/inspect`,
+`POST /api/world-model/simulate`, `POST /api/decision/evaluate`, and the
+research-run and memory lifecycle endpoints. Reports are available as Markdown
+and JSON. Web pages and repository content are treated as untrusted evidence;
+the agent never executes remote code, sends email, connects to a broker, or
+places a real trade.
+
+```mermaid
+flowchart LR
+  Q[Research question] --> P[Plan and validate]
+  P --> S[Web / paper / GitHub search]
+  P --> F[SRM forecast]
+  P --> W[World-model scenarios]
+  F --> D[Decision simulator]
+  W --> D
+  S --> V[Evidence and grounding]
+  D --> V
+  V --> R[Cited report and trace]
+```
+
 Install `web_requirements.txt`, then run:
 
 ```bash

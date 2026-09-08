@@ -9,10 +9,12 @@ from agent import SRMForecastingAgent
 from llm_agent import LLMForecastingAgent
 from intraday import yahoo_intraday, alpha_vantage_intraday
 from snapshot import write_snapshot
+from research_agent import ResearchOrchestrator
 
 st.set_page_config(page_title="SRM Volatility Agent", page_icon="~", layout="wide")
 agent = SRMForecastingAgent("srm_agent_runs")
 llm_agent = LLMForecastingAgent(agent)
+research_agent = ResearchOrchestrator()
 
 st.markdown("""<style>
 [data-testid="stAppViewContainer"]{background:#f5f7fa}.stApp{color:#172b3a}
@@ -30,8 +32,8 @@ def cached_online_forecast(request_text):
 def cached_intraday(ticker, provider, key=""):
     return alpha_vantage_intraday(ticker,key) if provider=="Alpha Vantage" else yahoo_intraday(ticker)
 
-st.title("SRM Volatility Forecasting Agent")
-st.caption("Daily volatility forecasts from geometrically similar market histories")
+st.title("Research Copilot for Dynamic Worlds")
+st.caption("Grounded research, SRM forecasting, probabilistic world-model scenarios, and decision simulation")
 st.warning("Research and paper-trading only. Not investment advice. Public market data produce a daily RV proxy, not high-frequency realized volatility.")
 st.info("SRM forecasts volatility magnitude, not price direction. Use the output for risk sizing and simulation; a separate return model would be required for a bullish/bearish price forecast.")
 
@@ -76,7 +78,26 @@ with st.sidebar:
 if "paper" not in st.session_state:
     st.session_state.paper = {"cash": 100000.0, "initial_cash": 100000.0, "positions": {}, "orders": [], "marks": {}, "equity_curve": []}
 
-forecast_tab, intraday_tab, lab_tab, analog_tab, agent_tab, paper_tab, audit_tab = st.tabs(["Forecast Monitor", "Intraday Risk", "Model Lab", "Analog Explorer", "Agent", "Paper Trading", "Audit"])
+research_tab, forecast_tab, intraday_tab, lab_tab, analog_tab, agent_tab, paper_tab, audit_tab = st.tabs(["Research Chat", "Forecast Monitor", "Intraday Risk", "Model Lab", "Analog Explorer", "Agent Trace", "Paper Trading", "Audit"])
+
+with research_tab:
+    st.subheader("Research Chat")
+    st.caption("The agent shows its plan, tool trace, evidence, model outputs, and limitations. External pages are treated as untrusted sources.")
+    question=st.text_area("Research question", "Compare world-model and LLM-agent research directions for reliable financial decision support.", height=110)
+    if st.button("Run grounded research", type="primary", key="research_run"):
+        with st.spinner("Planning and executing verified research tools..."):
+            st.session_state.research_run=research_agent.run(question)
+    rr=st.session_state.get("research_run")
+    if rr:
+        st.success(f"Run {rr['run_id']} | {len(rr['tools'])} tool events | {len(rr['evidence'])} evidence records")
+        st.markdown("### Plan")
+        st.json(rr["plan"])
+        st.markdown("### Answer")
+        st.markdown(rr["answer"])
+        st.markdown("### Tool trace")
+        st.dataframe([{"tool":x["tool"],"status":x["status"],"error":x.get("error","")} for x in rr["tools"]], hide_index=True, use_container_width=True)
+        st.download_button("Download research JSON", json.dumps(rr,indent=2), file_name=f"{rr['run_id']}.json", mime="application/json")
+        st.download_button("Download Markdown report", research_agent.report(rr), file_name=f"{rr['run_id']}.md", mime="text/markdown")
 
 with forecast_tab:
     left, right = st.columns([1, 2])
