@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import streamlit as st
 import pandas as pd
@@ -10,11 +11,14 @@ from llm_agent import LLMForecastingAgent
 from intraday import yahoo_intraday, alpha_vantage_intraday
 from snapshot import write_snapshot
 from research_agent import ResearchOrchestrator
+from trading_engine import TradingRunner
+from trading_engine.events import MarketEvent
 
 st.set_page_config(page_title="Research Copilot", page_icon="R", layout="wide", initial_sidebar_state="expanded")
 agent = SRMForecastingAgent("srm_agent_runs")
 llm_agent = LLMForecastingAgent(agent)
 research_agent = ResearchOrchestrator()
+trading_runner = TradingRunner()
 
 st.markdown("""<style>
 :root{--ink:#202123;--muted:#6b7280;--line:#e5e7eb;--panel:#ffffff;--bg:#f7f7f8}
@@ -87,10 +91,10 @@ with research_tab:
     st.subheader("Research Chat")
     st.caption("The agent shows its plan, tool trace, evidence, model outputs, and limitations. External pages are treated as untrusted sources.")
     question=st.text_area("Message", "Compare world-model and LLM-agent research directions for reliable financial decision support.", height=110, label_visibility="collapsed")
-    if st.button("Run grounded research", type="primary", key="research_run"):
+    if st.button("Run grounded research", type="primary", key="submit_research"):
         with st.spinner("Planning and executing verified research tools..."):
-            st.session_state.research_run=research_agent.run(question)
-    rr=st.session_state.get("research_run")
+            st.session_state["research_result"]=research_agent.run(question)
+    rr=st.session_state.get("research_result")
     if rr:
         st.success(f"Run {rr['run_id']} · {len(rr['tools'])} tool events · {len(rr['evidence'])} evidence records")
         st.markdown(rr["answer"])
@@ -263,7 +267,24 @@ with agent_tab:
         except Exception as exc: st.error(str(exc))
 
 with paper_tab:
-    st.subheader("Volatility-aware paper portfolio")
+    st.subheader("Strategy simulator")
+    st.caption("Alpaca IEX mode requires cloud Secrets; otherwise the simulator polls public delayed bars. All fills are internal paper fills.")
+    status=trading_runner.status()
+    c0,c1,c2,c3=st.columns(4); c0.metric("Mode",status["mode"]); c1.metric("Data",status["market_data_provider"]); c2.metric("NAV",f"${status['metrics']['nav']:,.2f}"); c3.metric("Return",f"{status['metrics']['return_pct']:.2f}%")
+    if st.button("Start automatic simulation",type="primary",key="start_auto_sim"): trading_runner.start(); st.rerun()
+    if st.button("Pause simulation",key="pause_auto_sim"): trading_runner.pause(); st.rerun()
+    if st.button("Reset public account",key="reset_auto_sim"): trading_runner.reset(); st.rerun()
+    if status["mode"] == "delayed_demo" and st.button("Poll latest delayed bars",key="poll_delayed_bars"):
+        trading_runner.start(); trading_runner.process_delayed_tick(); st.rerun()
+    st.caption(f"Strategy: {status['strategy_version']} | live broker orders: {'enabled' if status['live_orders_enabled'] else 'disabled'}")
+    metrics=trading_runner.portfolio.metrics()
+    m1,m2,m3,m4=st.columns(4); m1.metric("Cash",f"${metrics['cash']:,.2f}"); m2.metric("Fees",f"${metrics['fees']:,.2f}"); m3.metric("Max drawdown",f"{metrics['max_drawdown_pct']:.2f}%"); m4.metric("Fills",metrics["fills"])
+    st.subheader("Positions"); st.dataframe([{"symbol":s,"quantity":q,"mark":trading_runner.portfolio.marks.get(s,0),"value":q*trading_runner.portfolio.marks.get(s,0)} for s,q in metrics["positions"].items()],use_container_width=True,hide_index=True)
+    st.subheader("Equity curve"); st.line_chart(pd.DataFrame(trading_runner.portfolio.equity).set_index("timestamp")[["nav"]] if trading_runner.portfolio.equity else pd.DataFrame({"nav":[metrics["nav"]]}))
+    st.subheader("Orders and fills"); st.dataframe(trading_runner.portfolio.fills,use_container_width=True,hide_index=True)
+    st.caption("The simulator runs one public account in the current worker process. A persistent cloud runner is required for execution while the browser is closed.")
+
+    st.subheader("Legacy volatility-aware paper portfolio")
     st.caption("Volatility does not predict direction. This workspace uses forecasts to scale risk and records only simulated orders.")
     cash = st.number_input("Reset cash", min_value=1000.0, value=float(st.session_state.paper["initial_cash"]), step=1000.0)
     if st.button("Reset account"):

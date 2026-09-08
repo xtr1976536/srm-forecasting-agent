@@ -29,7 +29,11 @@ class ResearchOrchestrator:
                     reserved={"SRM","LLM","AI","RV","IV","MSE","QLIKE","WORLD","MODEL","AGENT","AND"}
                     tickers=sorted(set(re.findall(r"\b[A-Z]{1,5}(?:\.[A-Z])?\b",question))-reserved) or ["AAPL","MSFT"]
                     result=self.srm.run(f"forecast {' '.join(tickers)} horizon=5 k=20 cross_asset"); out=result; notes.append("SRM forecast completed with audit metadata.")
-                elif tool=="world_model_simulate": out=simulate(); notes.append("World-model scenario simulation completed with fixed seed and audit metadata.")
+                elif tool=="world_model_simulate":
+                    out=simulate()
+                    if out.get("mode")=="unavailable":
+                        raise RuntimeError(out["warning"])
+                    notes.append("World-model inference completed.")
                 elif tool=="decision_evaluate":
                     wm=next((e.output for e in run.tools if e.tool=="world_model_simulate" and e.output),simulate())
                     values=[v for sample in wm["paths"] for day in sample for v in day]

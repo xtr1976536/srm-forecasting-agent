@@ -8,11 +8,13 @@ from agent import SRMForecastingAgent
 from llm_agent import LLMForecastingAgent
 from research_agent import ResearchOrchestrator
 from research_agent.decision import evaluate_decision
+from trading_engine import TradingRunner
 
 app = FastAPI(title="SRM Volatility Forecasting Agent", version="0.1.0")
 agent = SRMForecastingAgent("srm_agent_runs")
 llm_agent = LLMForecastingAgent(agent)
 research_agent = ResearchOrchestrator()
+trading = TradingRunner()
 
 HTML = r"""<!doctype html>
 <html><head><meta charset="utf-8"><title>SRM Forecasting Agent</title>
@@ -54,6 +56,45 @@ def ready():
 
 @app.get("/version")
 def version(): return {"version":"0.2.0-research-copilot","capabilities":["web-search","paper-search","srm","world-model","decision-simulation","citations"]}
+
+@app.get("/api/trading/status")
+def trading_status(): return trading.status()
+
+@app.post("/api/trading/start")
+def trading_start(): return trading.start()
+
+@app.post("/api/trading/pause")
+def trading_pause(): return trading.pause()
+
+@app.post("/api/trading/reset")
+def trading_reset(): return trading.reset()
+
+@app.post("/api/trading/event")
+def trading_event(request: dict):
+    from trading_engine.events import MarketEvent
+    try: return trading.on_event(MarketEvent(str(request["event_id"]),str(request["symbol"]).upper(),float(request["price"]),float(request.get("volume",0)),str(request.get("timestamp", "")),trading.source))
+    except (KeyError, ValueError) as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@app.post("/api/trading/tick")
+def trading_tick(): return trading.process_delayed_tick()
+
+@app.get("/api/trading/account")
+def trading_account(): return trading.portfolio.metrics()
+
+@app.get("/api/trading/positions")
+def trading_positions(): return {"positions":trading.portfolio.positions,"marks":trading.portfolio.marks}
+
+@app.get("/api/trading/orders")
+def trading_orders(): return {"orders":trading.portfolio.orders}
+
+@app.get("/api/trading/fills")
+def trading_fills(): return {"fills":trading.portfolio.fills}
+
+@app.get("/api/trading/equity")
+def trading_equity(): return {"equity":trading.portfolio.equity}
+
+@app.get("/api/trading/metrics")
+def trading_metrics(): return trading.portfolio.metrics()
 
 @app.post("/api/research/chat")
 def research_chat(request: dict):

@@ -5,8 +5,8 @@ from research_agent.orchestrator import ResearchOrchestrator
 
 def test_world_model_demo_is_seeded_and_audited():
     a=simulate(2,8,42,["AAPL","MSFT"]); b=simulate(2,8,42,["AAPL","MSFT"])
-    assert a["paths"]==b["paths"] and a["future_observations_used"] is False
-    assert a["mode"]=="audited-results-driven-demo"
+    assert a["paths"]==b["paths"]==[]
+    assert a["mode"] == "unavailable"
 
 def test_decision_uses_paths_and_constraints():
     result=evaluate_decision([.1,.2,.3],constraints={"risk_budget":.15})
