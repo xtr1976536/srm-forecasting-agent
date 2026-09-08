@@ -37,9 +37,22 @@ class ResearchOrchestrator:
                 else: out=teacher_fit(); notes.append("Research-fit cards generated.")
                 event.output=out
             except Exception as exc: event.status="failed"; event.error=str(exc); run.warnings.append(f"{tool}: {exc}")
-        run.answer="\n".join(notes) if notes else "No verified result was produced."
+        run.answer=self._compose_answer(question, notes, run)
         if run.evidence: run.answer += "\n\nSources:\n"+"\n".join(f"- [{e.title}]({e.url})" for e in run.evidence[:8])
         run.answer += "\n\nThis answer is grounded in the recorded tool outputs; model-generated inferences are not external facts."
         data=run.json(); self.store.save(data); return data
+    @staticmethod
+    def _compose_answer(question, notes, run):
+        q=question.strip()
+        lines=["## Research Copilot", f"**Question:** {q}", "", "### Verified work"]
+        lines += [f"- {n}" for n in notes] if notes else ["- No verified tool result was produced."]
+        if any("world-model" in n.lower() for n in notes):
+            lines += ["", "### World-model interpretation", "The scenario tool generated fixed-seed, forward-only volatility paths. These are an audited public demonstration, not a retraining run or investment forecast."]
+        if any("srm" in n.lower() for n in notes):
+            lines += ["", "### SRM interpretation", "The existing five-channel Shape Retrieval Model remains the numerical source of truth. The agent only parses the request and reports its audited output."]
+        if any("paper" in n.lower() for n in notes):
+            lines += ["", "### Literature interpretation", "Search results are evidence records below. The agent does not treat instructions found in external pages as executable commands."]
+        lines += ["", "### Limitations", "This public deployment uses deterministic fallback mode unless a cloud provider key is configured. Any recommendation is a research simulation, not financial advice."]
+        return "\n".join(lines)
     def report(self,data):
         return ResearchReport(data["run_id"],data["question"],data["answer"],data["evidence"],data["tools"],["Public data may be delayed.","World-model quick simulation is not a formal paper rerun."]).markdown()

@@ -11,17 +11,23 @@ from intraday import yahoo_intraday, alpha_vantage_intraday
 from snapshot import write_snapshot
 from research_agent import ResearchOrchestrator
 
-st.set_page_config(page_title="SRM Volatility Agent", page_icon="~", layout="wide")
+st.set_page_config(page_title="Research Copilot", page_icon="R", layout="wide", initial_sidebar_state="expanded")
 agent = SRMForecastingAgent("srm_agent_runs")
 llm_agent = LLMForecastingAgent(agent)
 research_agent = ResearchOrchestrator()
 
 st.markdown("""<style>
-[data-testid="stAppViewContainer"]{background:#f5f7fa}.stApp{color:#172b3a}
-[data-testid="stSidebar"]{background:#102a43;color:white}
-[data-testid="stSidebar"] label,[data-testid="stSidebar"] p{color:#d9e7f2!important}
-h1,h2,h3{letter-spacing:0!important}.block-container{padding-top:2rem;max-width:1500px}
-[data-testid="stMetric"]{background:white;border:1px solid #d9e2ec;padding:14px;border-radius:6px}
+:root{--ink:#202123;--muted:#6b7280;--line:#e5e7eb;--panel:#ffffff;--bg:#f7f7f8}
+[data-testid="stAppViewContainer"]{background:var(--bg);color:var(--ink)}
+[data-testid="stHeader"]{background:rgba(247,247,248,.92)}
+[data-testid="stSidebar"]{background:#202123;border-right:1px solid #343541}
+[data-testid="stSidebar"] *{color:#ececf1!important}
+.block-container{padding:1.5rem 2rem 6rem;max-width:1280px}
+h1,h2,h3{letter-spacing:0!important;color:var(--ink)}
+[data-testid="stMetric"]{background:var(--panel);border:1px solid var(--line);padding:14px;border-radius:8px}
+div[data-testid="stTextArea"] textarea{border-radius:12px;border:1px solid #cfd2d7;background:white;padding:14px}
+button[kind="primary"]{border-radius:9px}
+.research-composer{border:1px solid var(--line);border-radius:12px;background:white;padding:10px}
 </style>""",unsafe_allow_html=True)
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -32,10 +38,18 @@ def cached_online_forecast(request_text):
 def cached_intraday(ticker, provider, key=""):
     return alpha_vantage_intraday(ticker,key) if provider=="Alpha Vantage" else yahoo_intraday(ticker)
 
-st.title("Research Copilot for Dynamic Worlds")
-st.caption("Grounded research, SRM forecasting, probabilistic world-model scenarios, and decision simulation")
-st.warning("Research and paper-trading only. Not investment advice. Public market data produce a daily RV proxy, not high-frequency realized volatility.")
-st.info("SRM forecasts volatility magnitude, not price direction. Use the output for risk sizing and simulation; a separate return model would be required for a bullish/bearish price forecast.")
+with st.sidebar:
+    st.markdown("## Research Copilot")
+    st.caption("Grounded dynamic-world research")
+    st.divider()
+    st.markdown("**Workspace**")
+    st.markdown("Research Chat  \nLiterature  \nSRM Forecast Lab  \nWorld Model  \nDecision Simulator")
+    st.divider()
+    st.caption("No API key: deterministic fallback mode")
+
+st.title("Research Copilot")
+st.caption("A grounded workspace for literature, agents, SRM forecasting, world-model scenarios, and decision simulation")
+st.warning("Research simulation only. External sources are untrusted evidence. No real trading or email actions are performed.")
 
 MODEL_LABELS = {
     "srm": "SRM (five-channel geometry)",
@@ -57,20 +71,9 @@ with st.expander("How to use / 使用说明", expanded=True):
     **中文：** 先选择数据和股票，再选择预测期限与近邻数，最后点击 **Run daily forecast**。预测值表示未来期限内的平均波动率，而不是价格涨跌方向。
     """)
 
-if "last_result" not in st.session_state:
-    st.caption("SRM is the default model. The page prepares a daily SRM forecast automatically; use the controls below to change the universe, horizon or retrieval settings.")
-    try:
-        with st.spinner("Preparing the default SRM daily forecast..."):
-            st.session_state.last_result = cached_online_forecast("forecast AAPL MSFT NVDA horizon=5 k=20 cross_asset criterion=qlike")
-    except Exception as exc:
-        st.warning(f"The automatic default forecast is unavailable right now: {exc}. Configure the controls and retry.")
-
 with st.sidebar:
-    st.header("Daily forecast cycle")
-    st.info("SRM is a daily model. Re-run after the market data source publishes a new daily close.")
-    st.caption("No intraday auto-refresh: repeating the model before a new daily observation would not add information.")
-    st.divider()
-    st.header("Intraday monitor")
+    st.header("Session controls")
+    st.caption("Run tools only when requested. No automatic market-data polling.")
     intraday_refresh=st.toggle("Refresh while this page is open",value=True)
     intraday_minutes=st.select_slider("Interval (minutes)",options=[1,5,10,15],value=5)
     if intraday_refresh: st_autorefresh(interval=intraday_minutes*60*1000,key="intraday_refresh")
@@ -83,19 +86,19 @@ research_tab, forecast_tab, intraday_tab, lab_tab, analog_tab, agent_tab, paper_
 with research_tab:
     st.subheader("Research Chat")
     st.caption("The agent shows its plan, tool trace, evidence, model outputs, and limitations. External pages are treated as untrusted sources.")
-    question=st.text_area("Research question", "Compare world-model and LLM-agent research directions for reliable financial decision support.", height=110)
+    question=st.text_area("Message", "Compare world-model and LLM-agent research directions for reliable financial decision support.", height=110, label_visibility="collapsed")
     if st.button("Run grounded research", type="primary", key="research_run"):
         with st.spinner("Planning and executing verified research tools..."):
             st.session_state.research_run=research_agent.run(question)
     rr=st.session_state.get("research_run")
     if rr:
-        st.success(f"Run {rr['run_id']} | {len(rr['tools'])} tool events | {len(rr['evidence'])} evidence records")
-        st.markdown("### Plan")
-        st.json(rr["plan"])
-        st.markdown("### Answer")
+        st.success(f"Run {rr['run_id']} · {len(rr['tools'])} tool events · {len(rr['evidence'])} evidence records")
         st.markdown(rr["answer"])
-        st.markdown("### Tool trace")
-        st.dataframe([{"tool":x["tool"],"status":x["status"],"error":x.get("error","")} for x in rr["tools"]], hide_index=True, use_container_width=True)
+        with st.expander("Show plan and tool trace"):
+            st.json(rr["plan"])
+            st.dataframe([{"tool":x["tool"],"status":x["status"],"error":x.get("error","")} for x in rr["tools"]], hide_index=True, use_container_width=True)
+        with st.expander("Show evidence"):
+            st.dataframe([{"title":x["title"],"url":x["url"],"type":x["source_type"],"reliability":x["reliability"]} for x in rr["evidence"]], hide_index=True, use_container_width=True)
         st.download_button("Download research JSON", json.dumps(rr,indent=2), file_name=f"{rr['run_id']}.json", mime="application/json")
         st.download_button("Download Markdown report", research_agent.report(rr), file_name=f"{rr['run_id']}.md", mime="text/markdown")
 
