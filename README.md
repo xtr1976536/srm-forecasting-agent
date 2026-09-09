@@ -1,5 +1,9 @@
 # SRM Forecasting Agent
 
+This is my research project. I designed the SRM agent, its information-boundary
+logic, audit artifacts, and web workflow; the implementation was developed with
+assistance from Codex/GPT. A manuscript is being prepared for arXiv submission.
+
 An auditable agent wrapper around the Shape Retrieval Model. It parses a natural-language request, selects a data adapter, validates the information boundary, retrieves geometric analog paths, explains the neighbors, and saves JSON audit artifacts.
 
 ```bash
