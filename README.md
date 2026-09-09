@@ -3,8 +3,8 @@
 An auditable agent wrapper around the Shape Retrieval Model. It parses a natural-language request, selects a data adapter, validates the information boundary, retrieves geometric analog paths, explains the neighbors, and saves JSON audit artifacts.
 
 ```bash
-pip install -r srm_agent/requirements.txt
-python -m srm_agent.cli "forecast AAPL MSFT NVDA horizon=5 k=20 cross asset"
+pip install -r requirements.txt
+python cli.py "forecast AAPL MSFT NVDA horizon=5 k=20 cross asset"
 ```
 
 The Yahoo adapter uses daily closing prices and labels its rolling squared-return measure as an RV proxy. For publication-grade realized volatility, pass a directory containing `merged_rv_data_filled.csv` and optionally `daily_returns.csv` with `--csv`.
@@ -36,6 +36,18 @@ data audit, or reported forecasting results. The public-data mode uses a daily
 RV proxy; paper-grade experiments should use the research RV adapter.
 
 ## Web dashboard
+
+## Headline Arena (safe dry-run)
+
+`headline_arena.py` builds a validated, timestamp-locked direction payload for
+local inspection only. The direction probability must come from an explicit
+direction model; SRM volatility magnitudes are never converted implicitly.
+There is no network submission path in this repository, and the payload is
+always marked `dry-run`.
+
+```bash
+python -c 'from headline_arena import build_payload; print(build_payload(target="gold", probability_positive=0.6))'
+```
 
 ## Research copilot MVP
 
@@ -84,7 +96,7 @@ flowchart LR
 Install `web_requirements.txt`, then run:
 
 ```bash
-PYTHONPATH=. python3 -m srm_agent.run_web
+PYTHONPATH=. python3 run_web.py
 ```
 
-Open `http://127.0.0.1:8000`. The dashboard supports online delayed market data, one-, five-, and 21-day forecasts, same-asset/cross-asset retrieval, nearest-path explanations, and forecast visualization. It intentionally does not connect to broker accounts or place real orders. The paper-trading layer should be added as a separate virtual-portfolio service after forecast validation.
+Open `http://127.0.0.1:8000`. The dashboard supports online delayed market data, one-, five-, and 21-day forecasts, same-asset/cross-asset retrieval, nearest-path explanations, and forecast visualization. It intentionally does not connect to broker accounts or place real orders. The event-driven paper simulator is research-only: it uses virtual portfolios, does not connect to brokers, and never places real orders.
